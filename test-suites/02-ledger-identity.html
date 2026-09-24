@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ledger Identity (aliases) — TDD</title>
+<style>
+  :root{--bg:#f7f7f5;--panel:#fff;--ink:#16181d;--muted:#5c6270;--line:#e3e4e8;
+    --green:#0f7a4d;--greenbg:#e7f5ee;--red:#b0203a;--redbg:#fbe9ec;
+    --ni:#8a5a00;--nibg:#fbf1dd;--err:#6d28d9;--errbg:#efe9fb;--accent:#c2410c;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    box-sizing:border-box;padding-top:env(safe-area-inset-top,0);padding-bottom:env(safe-area-inset-bottom,0)}
+  @media(prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --bg:#14151a;--panel:#1d1f26;--ink:#eceef2;--muted:#9aa1b0;--line:#2c2f39;
+    --green:#4ecb8b;--greenbg:#12291f;--red:#ff6b83;--redbg:#2a151a;
+    --ni:#e0b25a;--nibg:#2a2210;--err:#c4b5fd;--errbg:#1e1830;--accent:#f97316}}
+  :root[data-theme="dark"]{--bg:#14151a;--panel:#1d1f26;--ink:#eceef2;--muted:#9aa1b0;--line:#2c2f39;
+    --green:#4ecb8b;--greenbg:#12291f;--red:#ff6b83;--redbg:#2a151a;
+    --ni:#e0b25a;--nibg:#2a2210;--err:#c4b5fd;--errbg:#1e1830;--accent:#f97316}
+  *{box-sizing:border-box}html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;padding:16px;max-width:820px;margin:0 auto}
+  h1{font-size:20px;margin:.2em 0 .1em}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:24px 0 10px;border-bottom:1px solid var(--line);padding-bottom:6px}
+  .sub{color:var(--muted);font-size:13.5px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin:12px 0}
+  button{font:inherit;font-weight:600;color:#fff;background:var(--accent);border:0;border-radius:9px;padding:10px 14px;cursor:pointer}
+  button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+  button.ghost.on{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent)}
+  button:active{transform:translateY(1px)}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .sellab{font-size:12px;color:var(--muted);width:100%;margin-bottom:2px}
+  .counts{font-family:var(--mono);font-size:13px;margin:6px 0}
+  .interp{font-size:14px;margin:12px 0;padding:10px 12px;border-radius:9px;border:1px solid var(--line)}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  td{padding:9px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+  td.st{width:1%;white-space:nowrap}
+  .badge{font-size:11.5px;font-weight:700;padding:3px 8px;border-radius:999px;white-space:nowrap;font-family:var(--mono)}
+  .g{color:var(--green);background:var(--greenbg)}.r{color:var(--red);background:var(--redbg)}
+  .n{color:var(--ni);background:var(--nibg)}.e{color:var(--err);background:var(--errbg)}
+  .tname{font-weight:600}
+  .detail{color:var(--muted);font-size:12.5px;font-family:var(--mono);margin-top:3px;white-space:pre-wrap}
+  pre{font-family:var(--mono);font-size:12px;white-space:pre-wrap;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;overflow-x:auto}
+  code{font-family:var(--mono);font-size:12.5px;background:color-mix(in srgb,var(--ink) 7%,transparent);padding:1px 5px;border-radius:5px}
+</style>
+</head>
+<body>
+<h1>Ledger Identity — alias resolution</h1>
+<p class="sub">One person, many keys: a Zeffy <code>contact</code> UUID (from chip payments) and a normalised <code>email</code> (from cash top-ups) must resolve to a single account. New aliases attach automatically; when two existing accounts turn out to be the same person, they merge instead of splitting the balance.</p>
+
+<div class="panel">
+  <div class="row">
+    <span class="sellab">Run the suite against:</span>
+    <button class="ghost on" id="s-stub" onclick="pick('stub')">① Stub</button>
+    <button class="ghost" id="s-ok" onclick="pick('ok')">② Correct</button>
+    <button class="ghost" id="s-bug" onclick="pick('bug')">③ Bug: email-only (ignores contact id)</button>
+    <button class="ghost" onclick="toggleTheme()" style="margin-left:auto">◐</button>
+  </div>
+  <div class="counts" id="counts"></div>
+  <div class="interp" id="interp"></div>
+</div>
+
+<table id="tbl"></table>
+
+<h2>Contract</h2>
+<div class="panel">
+<pre>resolve({contactId?, email?, label?}) -> {accountId, merged}
+    - finds the account by ANY known alias (contact id or normalised email)
+    - a new alias on a known account is attached (future lookups by it work)
+    - if two different accounts are matched, they MERGE (merged:true); balance combines
+topup({contactId?, email?}, cents, source, ref) -> credits the resolved account; idempotent on ref
+debit(accountId, cents)                          -> a bet; hits the resolved (merged) account
+balanceForIdentity({contactId?, email?})         -> balance via any alias
+accounts()                                        -> distinct accounts (post-merge)
+recover(log)                                       -> identity graph + balances rebuilt from the log
+
+Money and identity are both events in one append-only log:
+  open_account · attach_alias · merge · topup · debit · payout</pre>
+</div>
+
+<script>
+class NotImplemented extends Error{constructor(m){super(m);this.name='NotImplemented';}}
+class AssertionError extends Error{constructor(m){super(m);this.name='AssertionError';}}
+function ok(c,m){if(!c)throw new AssertionError(m);}
+function eq(a,b,m){if(a!==b)throw new AssertionError((m||'value')+`: expected ${JSON.stringify(b)}, got ${JSON.stringify(a)}`);}
+function normalizeEmail(e){return (e||'').trim().toLowerCase()||null;}
+
+class Ledger{
+  constructor(useContact=true){this.log=[];this.seq=0;this.useContact=useContact;}
+  _append(e){e.seq=++this.seq;this.log.push(e);return e;}
+  _state(){
+    const alias=new Map(),parent=new Map(),label=new Map();
+    const find=x=>{if(!parent.has(x))parent.set(x,x);while(parent.get(x)!==x){parent.set(x,parent.get(parent.get(x)));x=parent.get(x);}return x;};
+    for(const e of this.log){
+      if(e.type==='open_account'){if(!parent.has(e.accountId))parent.set(e.accountId,e.accountId);if(e.label!=null)label.set(e.accountId,e.label);}
+      else if(e.type==='attach_alias'){alias.set(e.alias,e.accountId);}
+      else if(e.type==='merge'){const a=find(e.from),b=find(e.into);if(a!==b)parent.set(a,b);}
+    }
+    return {alias,parent,label,find};
+  }
+  _aliasKeys(id){const ks=[];if(this.useContact&&id.contactId)ks.push('contact:'+id.contactId);const ne=normalizeEmail(id.email);if(ne)ks.push('email:'+ne);return ks;}
+  lookup(id){const st=this._state();for(const k of this._aliasKeys(id)){if(st.alias.has(k))return st.find(st.alias.get(k));}return null;}
+  resolve(id){
+    const ks=this._aliasKeys(id);
+    if(ks.length===0){const acct='acct_'+(this.seq+1);this._append({type:'open_account',accountId:acct,label:id.label||null});return {accountId:acct,merged:false,anonymous:true};}
+    let st=this._state();
+    const roots=[],seen=new Set();
+    for(const k of ks){if(st.alias.has(k)){const r=st.find(st.alias.get(k));if(!seen.has(r)){seen.add(r);roots.push(r);}}}
+    let acct,merged=false;
+    if(roots.length===0){acct='acct_'+(this.seq+1);this._append({type:'open_account',accountId:acct,label:id.label||null});}
+    else{acct=roots[0];for(let i=1;i<roots.length;i++){this._append({type:'merge',from:roots[i],into:acct});merged=true;}}
+    st=this._state();
+    for(const k of ks){const cur=st.alias.has(k)?st.find(st.alias.get(k)):null;if(cur!==st.find(acct))this._append({type:'attach_alias',alias:k,accountId:acct});}
+    return {accountId:st.find(acct),merged};
+  }
+  _seenRef(ref){if(!ref)return false;for(const e of this.log)if(e.type==='topup'&&e.ref===ref)return true;return false;}
+  topup(id,cents,source,ref){
+    if(this._seenRef(ref))return {ok:false,reason:'duplicate ref'};
+    const {accountId,merged}=this.resolve(id);
+    this._append({type:'topup',accountId,delta:cents,source,ref});
+    return {ok:true,accountId,merged};
+  }
+  debit(accountId,cents){const st=this._state();this._append({type:'debit',accountId:st.find(accountId),delta:-cents});return {ok:true};}
+  balanceOf(accountId){const st=this._state();const root=st.find(accountId);let b=0;for(const e of this.log){if((e.type==='topup'||e.type==='debit'||e.type==='payout')&&e.accountId!=null&&st.find(e.accountId)===root)b+=e.delta;}return b;}
+  balanceForIdentity(id){const a=this.lookup(id);return a?this.balanceOf(a):0;}
+  accounts(){const st=this._state();const roots=new Set();for(const e of this.log)if(e.type==='open_account')roots.add(st.find(e.accountId));return [...roots];}
+  static recover(log,useContact=true){const L=new Ledger(useContact);L.log=log.map(e=>({...e}));L.seq=log.length;return L;}
+}
+
+const NI=()=>{throw new NotImplemented('not implemented');};
+const STUB={make:()=>({topup:NI,resolve:NI,lookup:NI,debit:NI,balanceOf:NI,balanceForIdentity:NI,accounts:NI}),recover:NI};
+const OK={make:()=>new Ledger(true),recover:log=>Ledger.recover(log,true)};
+const BUG={make:()=>new Ledger(false),recover:log=>Ledger.recover(log,false)};
+
+const SUITE=[
+ ['same contact id twice → one account, balances accumulate', imp=>{const L=imp.make();L.topup({contactId:'C'},5000,'zeffy','r1');L.topup({contactId:'C'},3000,'zeffy','r2');eq(L.accounts().length,1,'one account');eq(L.balanceForIdentity({contactId:'C'}),8000,'balance');}],
+ ['same email (case/whitespace) → one account', imp=>{const L=imp.make();L.topup({email:'Jane@Example.com '},1000,'zeffy','r1');L.topup({email:' jane@example.com'},2000,'cash');eq(L.accounts().length,1,'one account');eq(L.balanceForIdentity({email:'JANE@EXAMPLE.COM'}),3000,'balance');}],
+ ['Zeffy payment carries both aliases → later cash-by-email finds it', imp=>{const L=imp.make();L.topup({contactId:'C',email:'p@x.com'},5000,'zeffy','r1');L.topup({email:'p@x.com'},2000,'cash');eq(L.accounts().length,1,'one account');eq(L.balanceForIdentity({contactId:'C'}),7000,'balance via contact');}],
+ ['two separate accounts later found to be one → MERGE, balance combines', imp=>{const L=imp.make();L.topup({email:'p@x.com'},2000,'cash');L.topup({contactId:'C'},5000,'zeffy','r1');eq(L.accounts().length,2,'separate so far');const res=L.resolve({contactId:'C',email:'p@x.com'});ok(res.merged,'resolve reports merged');eq(L.accounts().length,1,'merged to one');eq(L.balanceForIdentity({email:'p@x.com'}),7000,'combined via email');eq(L.balanceForIdentity({contactId:'C'}),7000,'combined via contact');}],
+ ['different people stay separate', imp=>{const L=imp.make();L.topup({contactId:'C1'},1000,'zeffy','r1');L.topup({contactId:'C2'},2000,'zeffy','r2');eq(L.accounts().length,2,'two accounts');eq(L.balanceForIdentity({contactId:'C1'}),1000,'C1');eq(L.balanceForIdentity({contactId:'C2'}),2000,'C2');}],
+ ['new alias attaches to a known account', imp=>{const L=imp.make();L.topup({contactId:'C'},1000,'zeffy','r1');L.resolve({contactId:'C',email:'p@x.com'});eq(L.accounts().length,1,'still one');eq(L.balanceForIdentity({email:'p@x.com'}),1000,'now findable by email');}],
+ ['a bet debits the unified (merged) account', imp=>{const L=imp.make();L.topup({contactId:'C',email:'p@x.com'},5000,'zeffy','r1');const a=L.lookup({email:'p@x.com'});L.debit(a,3000);eq(L.balanceForIdentity({contactId:'C'}),2000,'debited via either alias');}],
+ ['duplicate top-up ref is idempotent across resolution', imp=>{const L=imp.make();L.topup({contactId:'C'},5000,'zeffy','ZF1');L.topup({contactId:'C'},5000,'zeffy','ZF1');eq(L.balanceForIdentity({contactId:'C'}),5000,'credited once');}],
+ ['crash → recover rebuilds identity graph AND balances', imp=>{const L=imp.make();L.topup({contactId:'C',email:'p@x.com'},5000,'zeffy','r1');L.topup({email:'p@x.com'},2000,'cash');L.topup({contactId:'C2'},1000,'zeffy','r2');const before1=L.balanceForIdentity({contactId:'C'}),before2=L.balanceForIdentity({contactId:'C2'}),beforeN=L.accounts().length;const R=imp.recover(L.log);eq(R.balanceForIdentity({contactId:'C'}),before1,'merged acct after recover');eq(R.balanceForIdentity({contactId:'C2'}),before2,'other acct after recover');eq(R.accounts().length,beforeN,'account count after recover');}],
+];
+
+const IMPLS={stub:STUB,ok:OK,bug:BUG};
+let current='stub';
+function pick(k){current=k;for(const id of['stub','ok','bug'])document.getElementById('s-'+id).classList.toggle('on',id===k);run();}
+function run(){
+  const imp=IMPLS[current],tbl=document.getElementById('tbl');tbl.innerHTML='';let g=0,r=0,n=0,e=0;
+  for(const[name,fn]of SUITE){let s,d='';
+    try{fn(imp);s='g';g++;}
+    catch(err){if(err instanceof NotImplemented){s='n';n++;d=err.message;}
+      else if(err instanceof AssertionError){s='r';r++;d=err.message;}
+      else{s='e';e++;d=err.name+': '+err.message;}}
+    const lab={g:'PASS',r:'FAIL',n:'RED · not impl',e:'ERROR'}[s];
+    tbl.insertAdjacentHTML('beforeend',`<tr><td class="st"><span class="badge ${s}">${lab}</span></td><td><span class="tname">${name}</span>${d?`<div class="detail">${d}</div>`:''}</td></tr>`);
+  }
+  document.getElementById('counts').textContent=`${g} pass · ${r} fail · ${n} red-not-implemented · ${e} error   (${SUITE.length} tests)`;
+  const box=document.getElementById('interp');
+  if(current==='stub'){box.style.borderColor='var(--ni)';box.style.background='var(--nibg)';box.innerHTML=`<strong>All red, not implemented.</strong> This is the spec for alias-based resolution. Now make it green.`;}
+  else if(current==='ok'){box.style.borderColor='var(--green)';box.style.background='var(--greenbg)';box.innerHTML=`<strong>All green.</strong> Contact id and email resolve to one account, new aliases attach, genuinely-same accounts merge instead of splitting money, different people stay separate, and the whole graph rebuilds from the log after a crash.`;}
+  else{box.style.borderColor='var(--red)';box.style.background='var(--redbg)';box.innerHTML=`<strong>Reds where identity depends on the contact id.</strong> Resolving on email alone can't link or merge chip payments that arrive keyed by contact id — exactly the cross-campaign case your data proved is real. The suite catches every place it strands a balance.`;}
+}
+function toggleTheme(){const c=document.documentElement.getAttribute('data-theme');document.documentElement.setAttribute('data-theme',c==='dark'?'light':'dark');}
+run();
+</script>
+</body>
+</html>

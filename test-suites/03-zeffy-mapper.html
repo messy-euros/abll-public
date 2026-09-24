@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Zeffy → Ledger Mapping (real data) — TDD</title>
+<style>
+  :root{--bg:#f7f7f5;--panel:#fff;--ink:#16181d;--muted:#5c6270;--line:#e3e4e8;
+    --green:#0f7a4d;--greenbg:#e7f5ee;--red:#b0203a;--redbg:#fbe9ec;
+    --ni:#8a5a00;--nibg:#fbf1dd;--err:#6d28d9;--errbg:#efe9fb;--accent:#c2410c;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    box-sizing:border-box;padding-top:env(safe-area-inset-top,0);padding-bottom:env(safe-area-inset-bottom,0)}
+  @media(prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --bg:#14151a;--panel:#1d1f26;--ink:#eceef2;--muted:#9aa1b0;--line:#2c2f39;
+    --green:#4ecb8b;--greenbg:#12291f;--red:#ff6b83;--redbg:#2a151a;
+    --ni:#e0b25a;--nibg:#2a2210;--err:#c4b5fd;--errbg:#1e1830;--accent:#f97316}}
+  :root[data-theme="dark"]{--bg:#14151a;--panel:#1d1f26;--ink:#eceef2;--muted:#9aa1b0;--line:#2c2f39;
+    --green:#4ecb8b;--greenbg:#12291f;--red:#ff6b83;--redbg:#2a151a;
+    --ni:#e0b25a;--nibg:#2a2210;--err:#c4b5fd;--errbg:#1e1830;--accent:#f97316}
+  *{box-sizing:border-box}html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;padding:16px;max-width:820px;margin:0 auto}
+  h1{font-size:20px;margin:.2em 0 .1em}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:24px 0 10px;border-bottom:1px solid var(--line);padding-bottom:6px}
+  .sub{color:var(--muted);font-size:13.5px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin:12px 0}
+  .warn{border-left:3px solid var(--accent)}
+  button{font:inherit;font-weight:600;color:#fff;background:var(--accent);border:0;border-radius:9px;padding:10px 14px;cursor:pointer}
+  button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+  button.ghost.on{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent)}
+  button:active{transform:translateY(1px)}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .sellab{font-size:12px;color:var(--muted);width:100%;margin-bottom:2px}
+  .counts{font-family:var(--mono);font-size:13px;margin:6px 0}
+  .interp{font-size:14px;margin:12px 0;padding:10px 12px;border-radius:9px;border:1px solid var(--line)}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  td{padding:9px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+  td.st{width:1%;white-space:nowrap}
+  .badge{font-size:11.5px;font-weight:700;padding:3px 8px;border-radius:999px;white-space:nowrap;font-family:var(--mono)}
+  .g{color:var(--green);background:var(--greenbg)}.r{color:var(--red);background:var(--redbg)}
+  .n{color:var(--ni);background:var(--nibg)}.e{color:var(--err);background:var(--errbg)}
+  .tname{font-weight:600}
+  .detail{color:var(--muted);font-size:12.5px;font-family:var(--mono);margin-top:3px;white-space:pre-wrap}
+  pre{font-family:var(--mono);font-size:12px;white-space:pre-wrap;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;overflow-x:auto}
+  code{font-family:var(--mono);font-size:12.5px;background:color-mix(in srgb,var(--ink) 7%,transparent);padding:1px 5px;border-radius:5px}
+</style>
+</head>
+<body>
+<h1>Zeffy → Ledger Mapping <span class="sub">(against your real data)</span></h1>
+<p class="sub">Now keyed to your actual schema: line items live in <code>items</code>, a chip is an item whose <code>rate_id</code> is the "Betting Ticket" rate ($10), drinks are excluded, and identity keys on the Zeffy <code>contact</code> UUID with email as label.</p>
+
+<div class="panel warn">
+  <strong>Update one value each year.</strong>
+  <p class="sub" style="margin-top:6px">The betting <code>rate_id</code> below is <em>last year's</em>. This year's "Drinks &amp; Bets" form will mint a new one — grab it from the form (or a test payment) and set <code>CONFIG.bettingRateId</code>. The title-regex fallback covers you until you do, but the <code>rate_id</code> is the reliable match.</p>
+</div>
+
+<div class="panel">
+  <div class="row">
+    <span class="sellab">Run the suite against:</span>
+    <button class="ghost on" id="s-stub" onclick="pick('stub')">① Stub</button>
+    <button class="ghost" id="s-ok" onclick="pick('ok')">② Correct</button>
+    <button class="ghost" id="s-bug" onclick="pick('bug')">③ Bug: counts drinks too</button>
+    <button class="ghost" onclick="toggleTheme()" style="margin-left:auto">◐</button>
+  </div>
+  <div class="counts" id="counts"></div>
+  <div class="interp" id="interp"></div>
+</div>
+
+<table id="tbl"></table>
+
+<h2>Contract &amp; config (from your data)</h2>
+<div class="panel">
+<pre>map(payment) -> { topups:[ {player, contactId, email, label, cents, source, ref} ], flags:[...] }
+
+  player    = contact UUID if present, else normalised email   // stable, cross-campaign
+  contactId = payment.contact                                   // Zeffy's deduped id
+  email/label = buyer.email / "first last"                      // human label + cash fallback
+  cents     = Σ amount of items whose rate_id is the Betting Ticket rate
+  ref       = payment.id                                        // ledger dedupes on this
+  credit only when status 'succeeded' and refund_status 'none'.
+  drinks-only / entry-only payment -> no credit, no error.
+  no email AND no contact -> flagged for the exception desk.
+
+CONFIG (set from your form each year):
+  bettingRateId  = 'a188e910-2fa6-45fe-b72f-9c2cc49f76b6'   // "Betting Ticket" $10 (last year)
+  drink rate for reference: 'c5fd0e98-...'                   // "Alcoholic Drink Ticket" $2  (excluded)</pre>
+</div>
+
+<script>
+class NotImplemented extends Error{constructor(m){super(m);this.name='NotImplemented';}}
+class AssertionError extends Error{constructor(m){super(m);this.name='AssertionError';}}
+function ok(c,m){if(!c)throw new AssertionError(m);}
+function eq(a,b,m){if(a!==b)throw new AssertionError((m||'value')+`: expected ${JSON.stringify(b)}, got ${JSON.stringify(a)}`);}
+
+const CONFIG={
+  bettingRateId:'a188e910-2fa6-45fe-b72f-9c2cc49f76b6',   // last year's Betting Ticket
+  bettingTitleFallback:/\bbet(ting)?\b/i,                 // used only if rate_id doesn't match
+};
+const DRINK_RATE='c5fd0e98-c247-4b8a-ace6-a595efe3c02f';
+
+function normalizeEmail(e){return (e||'').trim().toLowerCase()||null;}
+function isBettingItem(it){
+  if(it && it.rate_id && it.rate_id===CONFIG.bettingRateId) return true;
+  return CONFIG.bettingTitleFallback.test((it&&it.rate_title)||'');
+}
+
+/* ADAPTER — real Zeffy field paths */
+function readZeffyFields(pmt){
+  const b=pmt.buyer||{};
+  return {
+    id:pmt.id, status:pmt.status,
+    isRefunded:(pmt.refund_status && pmt.refund_status!=='none') || (Array.isArray(pmt.refunds)&&pmt.refunds.length>0),
+    email:b.email, name:((b.first_name||'')+' '+(b.last_name||'')).trim(),
+    contactId:pmt.contact||null,
+    items:Array.isArray(pmt.items)?pmt.items:[],
+  };
+}
+
+function makeMapper(mode){ // 'correct' | 'allitems'
+  return function map(pmt){
+    const f=readZeffyFields(pmt), flags=[];
+    if(f.status!=='succeeded') return {topups:[],flags:[{kind:'skipped_status',status:f.status,ref:f.id}]};
+    if(f.isRefunded) return {topups:[],flags:[{kind:'skipped_refunded',ref:f.id}]};
+    const email=normalizeEmail(f.email), contactId=f.contactId;
+    let cents;
+    if(mode==='allitems') cents=f.items.reduce((s,it)=>s+(it.amount||0),0);           // seeded bug
+    else cents=f.items.filter(isBettingItem).reduce((s,it)=>s+(it.amount||0),0);       // bets only
+    if(cents<=0) return {topups:[],flags};
+    if(!email && !contactId){flags.push({kind:'missing_identity',ref:f.id}); return {topups:[],flags};}
+    const player=contactId||email;
+    return {topups:[{player,contactId,email:email||null,label:f.name||email||contactId,cents,source:'zeffy',ref:f.id}],flags};
+  };
+}
+const STUB={map:()=>{throw new NotImplemented('map() not implemented');}};
+const OK={map:makeMapper('correct')};
+const BUG={map:makeMapper('allitems')};
+
+/* ---- sample payments in the REAL shape ---- */
+const bet=(a)=>({object:'item',type:'ticket',amount:a,currency:'usd',rate_id:CONFIG.bettingRateId,rate_title:'Betting Ticket'});
+const drink=()=>({object:'item',type:'ticket',amount:200,currency:'usd',rate_id:DRINK_RATE,rate_title:'Alcoholic Drink Ticket'});
+const entry=(a)=>({object:'item',type:'ticket',amount:a,currency:'usd',rate_id:'entry-rate-uuid',rate_title:'General Admission + Buffet'});
+
+const P={
+ mixed:{id:'pay_db1',status:'succeeded',refund_status:'none',refunds:[],currency:'usd',amount:3400,
+   contact:'contact-uuid-1',buyer:{email:'Jane@Example.com ',first_name:'Jane',last_name:'Doe'},
+   items:[drink(),drink(),bet(1000),bet(1000),bet(1000)]},
+ betsOnly:{id:'pay_db2',status:'succeeded',refund_status:'none',refunds:[],currency:'usd',amount:5000,
+   contact:'contact-uuid-2',buyer:{email:'sam@example.com',first_name:'Sam',last_name:'Lee'},
+   items:[bet(1000),bet(1000),bet(1000),bet(1000),bet(1000)]},
+ drinksOnly:{id:'pay_db3',status:'succeeded',refund_status:'none',refunds:[],currency:'usd',amount:600,
+   contact:'contact-uuid-3',buyer:{email:'d@x.com',first_name:'D',last_name:'K'},
+   items:[drink(),drink(),drink()]},
+ entryTicket:{id:'pay_a1',status:'succeeded',refund_status:'none',refunds:[],currency:'usd',amount:5000,
+   contact:'contact-uuid-4',buyer:{email:'e@x.com',first_name:'E',last_name:'T'},
+   items:[entry(5000)]},
+ messyEmail:{id:'pay_db4',status:'succeeded',refund_status:'none',refunds:[],currency:'usd',amount:1000,
+   contact:null,buyer:{email:'  MESSY@Example.com ',first_name:'M',last_name:'X'},
+   items:[bet(1000)]},
+ failed:{id:'pay_db5',status:'failed',refund_status:'none',refunds:[],currency:'usd',amount:1000,
+   contact:'c5',buyer:{email:'f@x.com'},items:[bet(1000)]},
+ refunded:{id:'pay_db6',status:'succeeded',refund_status:'refunded',refunds:[{}],currency:'usd',amount:1000,
+   contact:'c6',buyer:{email:'r@x.com'},items:[bet(1000)]},
+ noEmailHasContact:{id:'pay_db7',status:'succeeded',refund_status:'none',refunds:[],currency:'usd',amount:2000,
+   contact:'contact-uuid-7',buyer:{first_name:'No',last_name:'Email'},items:[bet(1000),bet(1000)]},
+ noIdentity:{id:'pay_db8',status:'succeeded',refund_status:'none',refunds:[],currency:'usd',amount:1000,
+   contact:null,buyer:{},items:[bet(1000)]},
+};
+
+const SUITE=[
+ ['mixed drinks+bets → credit the BETS only, not the drinks', imp=>{const r=imp.map(P.mixed);eq(r.topups.length,1,'topups');eq(r.topups[0].cents,3000,'3×$10 chips, excluding the two $2 drinks');}],
+ ['bets-only → sum of betting tickets', imp=>{const r=imp.map(P.betsOnly);eq(r.topups[0].cents,5000,'5×$10');}],
+ ['drinks-only → no credit, no error', imp=>{const r=imp.map(P.drinksOnly);eq(r.topups.length,0,'no topups');eq(r.flags.length,0,'no flags');}],
+ ['entry-ticket payment → no betting credit', imp=>{const r=imp.map(P.entryTicket);eq(r.topups.length,0,'entry tickets grant no chips');}],
+ ['identity keys on contact UUID; email + name carried', imp=>{const r=imp.map(P.mixed);const t=r.topups[0];eq(t.player,'contact-uuid-1','player=contactId');eq(t.contactId,'contact-uuid-1','contactId');eq(t.email,'jane@example.com','email normalised');eq(t.label,'Jane Doe','label');eq(t.ref,'pay_db1','ref');}],
+ ['no contact → falls back to normalised email as player', imp=>{const r=imp.map(P.messyEmail);eq(r.topups[0].player,'messy@example.com','player=email when no contact');}],
+ ['failed payment → no credit, flagged', imp=>{const r=imp.map(P.failed);eq(r.topups.length,0,'none');ok(r.flags.some(f=>f.kind==='skipped_status'),'skipped_status');}],
+ ['refunded payment → no credit, flagged', imp=>{const r=imp.map(P.refunded);eq(r.topups.length,0,'none');ok(r.flags.some(f=>f.kind==='skipped_refunded'),'skipped_refunded');}],
+ ['no email but has contact → still credited by contact id', imp=>{const r=imp.map(P.noEmailHasContact);eq(r.topups.length,1,'credited');eq(r.topups[0].player,'contact-uuid-7','player=contactId');eq(r.topups[0].cents,2000,'2×$10');}],
+ ['no email AND no contact → flagged for exception desk', imp=>{const r=imp.map(P.noIdentity);eq(r.topups.length,0,'none');ok(r.flags.some(f=>f.kind==='missing_identity'),'missing_identity');}],
+];
+
+const IMPLS={stub:STUB,ok:OK,bug:BUG};
+let current='stub';
+function pick(k){current=k;for(const id of['stub','ok','bug'])document.getElementById('s-'+id).classList.toggle('on',id===k);run();}
+function run(){
+  const imp=IMPLS[current],tbl=document.getElementById('tbl');tbl.innerHTML='';let g=0,r=0,n=0,e=0;
+  for(const[name,fn]of SUITE){let s,d='';
+    try{fn(imp);s='g';g++;}
+    catch(err){if(err instanceof NotImplemented){s='n';n++;d=err.message;}
+      else if(err instanceof AssertionError){s='r';r++;d=err.message;}
+      else{s='e';e++;d=err.name+': '+err.message;}}
+    const lab={g:'PASS',r:'FAIL',n:'RED · not impl',e:'ERROR'}[s];
+    tbl.insertAdjacentHTML('beforeend',`<tr><td class="st"><span class="badge ${s}">${lab}</span></td><td><span class="tname">${name}</span>${d?`<div class="detail">${d}</div>`:''}</td></tr>`);
+  }
+  document.getElementById('counts').textContent=`${g} pass · ${r} fail · ${n} red-not-implemented · ${e} error   (${SUITE.length} tests)`;
+  const box=document.getElementById('interp');
+  if(current==='stub'){box.style.borderColor='var(--ni)';box.style.background='var(--nibg)';
+    box.innerHTML=`<strong>All red, all not-implemented.</strong> This is the spec for <code>map()</code> against your real schema. Now make it green.`;}
+  else if(current==='ok'){box.style.borderColor='var(--green)';box.style.background='var(--greenbg)';
+    box.innerHTML=`<strong>All green against real data.</strong> Credits only Betting Tickets, excludes drinks, keys on the Zeffy contact UUID, and routes failed/refunded/identity-less payments to flags.`;}
+  else{box.style.borderColor='var(--red)';box.style.background='var(--redbg)';
+    box.innerHTML=`<strong>Three reds — the drinks leak.</strong> Summing <em>all</em> items instead of just betting tickets over-credits mixed orders by the drink amount, and hands credit to drinks-only and entry-only buyers who bought no chips. This is the exact mistake your two ticket types make easy — caught by the suite.`;}
+}
+function toggleTheme(){const c=document.documentElement.getAttribute('data-theme');document.documentElement.setAttribute('data-theme',c==='dark'?'light':'dark');}
+run();
+</script>
+</body>
+</html>

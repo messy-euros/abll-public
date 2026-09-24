@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Ledger TDD Suite — Night at the Races</title>
+<style>
+  :root{
+    --bg:#f7f7f5; --panel:#fff; --ink:#16181d; --muted:#5c6270; --line:#e3e4e8;
+    --green:#0f7a4d; --greenbg:#e7f5ee; --red:#b0203a; --redbg:#fbe9ec;
+    --ni:#8a5a00; --nibg:#fbf1dd; --err:#6d28d9; --errbg:#efe9fb; --accent:#c2410c;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --bg:#14151a;--panel:#1d1f26;--ink:#eceef2;--muted:#9aa1b0;--line:#2c2f39;
+    --green:#4ecb8b;--greenbg:#12291f;--red:#ff6b83;--redbg:#2a151a;
+    --ni:#e0b25a;--nibg:#2a2210;--err:#c4b5fd;--errbg:#1e1830;--accent:#f97316;}}
+  :root[data-theme="dark"]{
+    --bg:#14151a;--panel:#1d1f26;--ink:#eceef2;--muted:#9aa1b0;--line:#2c2f39;
+    --green:#4ecb8b;--greenbg:#12291f;--red:#ff6b83;--redbg:#2a151a;
+    --ni:#e0b25a;--nibg:#2a2210;--err:#c4b5fd;--errbg:#1e1830;--accent:#f97316;}
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    padding:16px;max-width:820px;margin:0 auto}
+  h1{font-size:20px;margin:.2em 0 .1em}
+  h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);
+    margin:24px 0 10px;border-bottom:1px solid var(--line);padding-bottom:6px}
+  .sub{color:var(--muted);font-size:13.5px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin:12px 0}
+  .boundary{border-left:3px solid var(--accent)}
+  button{font:inherit;font-weight:600;color:#fff;background:var(--accent);border:0;border-radius:9px;padding:10px 14px;cursor:pointer}
+  button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line);font-weight:600}
+  button.ghost.on{border-color:var(--accent);color:var(--accent);background:color-mix(in srgb,var(--accent) 8%,transparent)}
+  button:active{transform:translateY(1px)}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .sellab{font-size:12px;color:var(--muted);width:100%;margin-bottom:2px}
+  .interp{font-size:14px;margin:12px 0;padding:10px 12px;border-radius:9px;border:1px solid var(--line)}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  td{padding:9px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+  td.st{width:1%;white-space:nowrap}
+  .badge{font-size:11.5px;font-weight:700;padding:3px 8px;border-radius:999px;white-space:nowrap;font-family:var(--mono)}
+  .g{color:var(--green);background:var(--greenbg)}
+  .r{color:var(--red);background:var(--redbg)}
+  .n{color:var(--ni);background:var(--nibg)}
+  .e{color:var(--err);background:var(--errbg)}
+  .tname{font-weight:600}
+  .detail{color:var(--muted);font-size:12.5px;font-family:var(--mono);margin-top:3px;white-space:pre-wrap}
+  .counts{font-family:var(--mono);font-size:13px;margin:6px 0}
+  code{font-family:var(--mono);font-size:12.5px;background:color-mix(in srgb,var(--ink) 7%,transparent);padding:1px 5px;border-radius:5px}
+  details{margin-top:8px} summary{cursor:pointer;font-size:13px;color:var(--accent);font-weight:600}
+  pre{font-family:var(--mono);font-size:12px;white-space:pre-wrap;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;overflow-x:auto}
+</style>
+</head>
+<body>
+<h1>Ledger TDD Suite</h1>
+<p class="sub">Night at the Races — Architecture A. Tests written against a <strong>contract</strong>, run first against an empty <strong>stub</strong>. They should all be <strong>red for the right reasons</strong> before any real code exists. Then swap in an implementation and watch the same suite go green — or not, and fix.</p>
+
+<div class="panel boundary">
+  <strong>The loop this page runs</strong>
+  <p class="sub" style="margin-top:6px">
+  <strong>1 · Stub</strong> — no behaviour implemented. Every test fails with <code>NotImplemented</code>. That's the good red: the test fails because the feature is absent, not because the test is broken. If any test went green against the stub, that test would be worthless.<br>
+  <strong>2 · Correct impl</strong> — the same suite, unchanged, run against a real ledger. All green.<br>
+  <strong>3 · Correct − one seeded bug</strong> — idempotency removed from top-ups. The suite pinpoints exactly one red (duplicate webhook) while everything else stays green. That's the regression catch you're building this for.</p>
+</div>
+
+<div class="panel">
+  <div class="row">
+    <span class="sellab">Run the suite against:</span>
+    <button class="ghost on" id="s-stub" onclick="pick('stub')">① Stub (unimplemented)</button>
+    <button class="ghost" id="s-ok" onclick="pick('ok')">② Correct impl</button>
+    <button class="ghost" id="s-bug" onclick="pick('bug')">③ Correct − 1 bug</button>
+    <button class="ghost" onclick="toggleTheme()" style="margin-left:auto">◐</button>
+  </div>
+  <div class="counts" id="counts"></div>
+  <div class="interp" id="interp"></div>
+</div>
+
+<table id="tbl"></table>
+
+<h2>The contract under test</h2>
+<div class="panel">
+<p class="sub">This is the interface the eventual backend must satisfy. Green means the implementation honours it; the tests never change between stub and real code.</p>
+<pre>balance(player)            -> integer cents
+topup(player, cents, source, ref?)   -> {ok, reason?}   // idempotent on ref
+openRace(id, lockTs)  /  lockRace(id)
+placeBet(player, raceId, horse, cents, nowTs) -> {ok, reason?}
+      // rejects if: race not open, nowTs > lockTs, amount invalid, balance &lt; amount
+settle(raceId, winningHorse) -> {ok, pot, houseCut, payouts:[{player,cents}]}
+      // pot == Σpayouts + houseCut, exactly, incl. rounding
+exportLog()  ->  array          // append-only; balances are Σ of it
+recover(log) ->  ledger         // rebuild identical balances after a crash</pre>
+</div>
+
+<script>
+const D=d=>Math.round(d*100), $=c=>'$'+(c/100).toFixed(2);
+class NotImplemented extends Error{constructor(m){super(m);this.name='NotImplemented';}}
+class AssertionError extends Error{constructor(m){super(m);this.name='AssertionError';}}
+function ok(c,m){ if(!c) throw new AssertionError(m); }
+function eq(a,b,m){ if(a!==b) throw new AssertionError((m||'value')+`: expected ${b}, got ${a}`); }
+
+/* ================= ① STUB — nothing implemented ================= */
+const M=n=>()=>{throw new NotImplemented(n+'() not implemented');};
+function makeStub(){return{
+  balance:M('balance'),topup:M('topup'),openRace:M('openRace'),lockRace:M('lockRace'),
+  placeBet:M('placeBet'),settle:M('settle'),exportLog:M('exportLog')};}
+const STUB={make:makeStub, recover:()=>{throw new NotImplemented('recover() not implemented');}};
+
+/* ================= ② CORRECT implementation ================= */
+function correctLedger(houseShare, seedBug){
+  const L={log:[],seq:0,seen:new Set(),races:{},houseShare,cashIn:0,zeffyIn:0};
+  const append=e=>{e.seq=++L.seq;L.log.push(e);return e;};
+  L.balance=p=>{let b=0;for(const e of L.log) if(e.player===p) b+=e.delta; return b;};
+  L.topup=(p,c,src,ref)=>{
+    if(ref && !seedBug.noIdempotency){ if(L.seen.has(ref)) return {ok:false,reason:'duplicate ref ignored'}; L.seen.add(ref);}
+    append({type:'topup',player:p,delta:c,src,ref});
+    if(src==='cash') L.cashIn+=c; else if(src==='zeffy') L.zeffyIn+=c;
+    return {ok:true};
+  };
+  L.openRace=(id,lock)=>L.races[id]={state:'open',lock,bets:[]};
+  L.lockRace=id=>{if(L.races[id])L.races[id].state='locked';};
+  L.placeBet=(p,rid,h,c,now)=>{
+    const r=L.races[rid];
+    if(!r) return {ok:false,reason:'no such race'};
+    if(r.state!=='open') return {ok:false,reason:'race not open'};
+    if(now>r.lock) return {ok:false,reason:'past post time'};
+    if(!(Number.isInteger(c)&&c>0)) return {ok:false,reason:'invalid amount'};
+    if(L.balance(p)<c) return {ok:false,reason:'insufficient balance'};
+    r.bets.push({player:p,horse:h,cents:c}); append({type:'bet',player:p,delta:-c,rid,horse:h});
+    return {ok:true};
+  };
+  L.settle=(rid,win)=>{
+    const r=L.races[rid]; if(!r||r.state==='settled') return {ok:false,reason:'bad state'};
+    r.state='settled';
+    const pot=r.bets.reduce((s,b)=>s+b.cents,0);
+    const winners=r.bets.filter(b=>b.horse===win);
+    const stake=winners.reduce((s,b)=>s+b.cents,0);
+    const houseTarget=Math.floor(pot*L.houseShare);
+    let dist=pot-houseTarget, paid=0, payouts=[];
+    if(stake>0) for(const w of winners){const s=Math.floor(dist*w.cents/stake);payouts.push({player:w.player,cents:s});paid+=s;}
+    const houseCut = stake>0 ? houseTarget+(dist-paid) : pot;
+    for(const p of payouts) append({type:'payout',player:p.player,delta:p.cents,rid});
+    return {ok:true,pot,houseCut,payouts};
+  };
+  L.exportLog=()=>L.log.map(e=>({...e}));
+  return L;
+}
+function correctModule(seedBug){
+  return {
+    make:()=>correctLedger(0.5,seedBug),
+    recover:log=>{const L=correctLedger(0.5,seedBug);L.log=log.map(e=>({...e}));L.seq=log.length;return L;}
+  };
+}
+const OK  = correctModule({});                 // fully correct
+const BUG = correctModule({noIdempotency:true}); // one seeded regression
+
+/* ===================== the suite (contract-level) ===================== */
+const SUITE=[
+ ['new player has a zero balance', imp=>{const L=imp.make(); eq(L.balance('nobody'),0,'balance');}],
+ ['a top-up increases the balance', imp=>{const L=imp.make(); L.topup('jane',D(100),'zeffy','r1'); eq(L.balance('jane'),D(100),'balance');}],
+ ['top-ups accumulate', imp=>{const L=imp.make(); L.topup('jane',D(100),'zeffy','r1'); L.topup('jane',D(40),'cash'); eq(L.balance('jane'),D(140),'balance');}],
+ ['a bet debits the balance', imp=>{const L=imp.make(); L.topup('jane',D(100),'zeffy','r1'); L.openRace('R',1e15); const r=L.placeBet('jane','R','3',D(30),1); ok(r.ok,'bet should be accepted'); eq(L.balance('jane'),D(70),'balance');}],
+ ['a single bet over balance is rejected', imp=>{const L=imp.make(); L.topup('jane',D(20),'cash'); L.openRace('R',1e15); const r=L.placeBet('jane','R','3',D(30),1); ok(!r.ok,'over-balance bet must be rejected'); eq(L.balance('jane'),D(20),'balance untouched');}],
+ ['no double-spend: two full-balance bets, second rejected', imp=>{const L=imp.make(); L.topup('jane',D(100),'zeffy','r1'); L.openRace('R',1e15); const a=L.placeBet('jane','R','3',D(100),1); const b=L.placeBet('jane','R','5',D(100),1); ok(a.ok,'first should pass'); ok(!b.ok,'second must be rejected'); ok(L.balance('jane')>=0,'balance must not go negative');}],
+ ['a bet on a locked race is rejected', imp=>{const L=imp.make(); L.topup('sam',D(50),'cash'); L.openRace('R',1e15); L.lockRace('R'); const r=L.placeBet('sam','R','2',D(10),1); ok(!r.ok,'locked race must reject bets');}],
+ ['a bet past post time is rejected', imp=>{const L=imp.make(); L.topup('sam',D(50),'cash'); L.openRace('R',100); const r=L.placeBet('sam','R','2',D(10),200); ok(!r.ok,'server clock past lock must reject');}],
+ ['duplicate payment webhook is idempotent', imp=>{const L=imp.make(); L.topup('lee',D(100),'zeffy','ZFY-1'); L.topup('lee',D(100),'zeffy','ZFY-1'); eq(L.balance('lee'),D(100),'must credit the ref only once');}],
+ ['crash then recover preserves balances', imp=>{const L=imp.make(); L.topup('a',D(100),'zeffy','r1'); L.topup('b',D(40),'cash'); L.openRace('R',1e15); L.placeBet('a','R','3',D(30),1); L.placeBet('b','R','3',D(10),1); L.settle('R','3'); const before=[L.balance('a'),L.balance('b')]; const R=imp.recover(L.exportLog()); eq(R.balance('a'),before[0],'a after recover'); eq(R.balance('b'),before[1],'b after recover');}],
+ ['settle conserves money exactly (incl. rounding)', imp=>{const L=imp.make(); ['a','b','c'].forEach((p,i)=>L.topup(p,D(100),'zeffy','r'+i)); L.openRace('R',1e15); L.placeBet('a','R','3',D(30),1); L.placeBet('b','R','3',D(10),1); L.placeBet('c','R','7',D(30),1); const s=L.settle('R','3'); const paid=s.payouts.reduce((x,p)=>x+p.cents,0); eq(paid+s.houseCut,s.pot,'payouts + house must equal pot');}],
+ ['payout is proportional to stake', imp=>{const L=imp.make(); ['a','b','c'].forEach((p,i)=>L.topup(p,D(100),'zeffy','r'+i)); L.openRace('R',1e15); L.placeBet('a','R','3',D(40),1); L.placeBet('b','R','3',D(20),1); L.placeBet('c','R','1',D(40),1); const s=L.settle('R','3'); const pa=s.payouts.find(p=>p.player==='a').cents, pb=s.payouts.find(p=>p.player==='b').cents; ok(Math.abs(pa/pb-2)<0.02,`$40 winner should get ~2x the $20 winner (got ${(pa/pb).toFixed(2)}x)`);}],
+ ['hostile input (negative / zero / NaN) is rejected', imp=>{const L=imp.make(); L.topup('x',D(50),'cash'); L.openRace('R',1e15); ok(!L.placeBet('x','R','3',-D(10),1).ok,'negative rejected'); ok(!L.placeBet('x','R','3',0,1).ok,'zero rejected'); ok(!L.placeBet('x','R','3',NaN,1).ok,'NaN rejected'); eq(L.balance('x'),D(50),'balance untouched');}],
+];
+
+const IMPLS={stub:STUB, ok:OK, bug:BUG};
+let current='stub';
+function pick(k){ current=k; for(const id of ['stub','ok','bug']) document.getElementById('s-'+id).classList.toggle('on',id===k); run(); }
+
+function run(){
+  const imp=IMPLS[current], tbl=document.getElementById('tbl'); tbl.innerHTML='';
+  let g=0,r=0,n=0,e=0;
+  for(const [name,fn] of SUITE){
+    let status,detail='';
+    try{ fn(imp); status='g'; g++; }
+    catch(err){
+      if(err instanceof NotImplemented){ status='n'; n++; detail=err.message; }
+      else if(err instanceof AssertionError){ status='r'; r++; detail=err.message; }
+      else { status='e'; e++; detail=err.name+': '+err.message; }
+    }
+    const label={g:'PASS',r:'FAIL',n:'RED · not impl',e:'ERROR'}[status];
+    tbl.insertAdjacentHTML('beforeend',
+      `<tr><td class="st"><span class="badge ${status}">${label}</span></td>`+
+      `<td><span class="tname">${name}</span>${detail?`<div class="detail">${detail}</div>`:''}</td></tr>`);
+  }
+  document.getElementById('counts').textContent =
+    `${g} pass · ${r} fail · ${n} red-not-implemented · ${e} error   (${SUITE.length} tests)`;
+  const box=document.getElementById('interp');
+  if(current==='stub'){
+    box.style.borderColor='var(--ni)'; box.style.background='var(--nibg)';
+    box.innerHTML=`<strong>All red, all for the right reason.</strong> Every test fails with <code>NotImplemented</code> — because the behaviour doesn't exist yet, not because a test is malformed. If anything here were green, that test wouldn't be testing anything. This is your starting line: now write code to turn them green.`;
+  } else if(current==='ok'){
+    box.style.borderColor='var(--green)'; box.style.background='var(--greenbg)';
+    box.innerHTML=`<strong>All green.</strong> The identical suite — not one assertion changed — now passes against a real ledger. This is the finish line for v1 of the logic.`;
+  } else {
+    box.style.borderColor='var(--red)'; box.style.background='var(--redbg)';
+    box.innerHTML=`<strong>One red, precisely located.</strong> Same correct ledger with idempotency removed from top-ups. The suite flags exactly the <em>duplicate payment webhook</em> test and leaves the rest green — that's it catching a real regression before it reaches the venue.`;
+  }
+}
+function toggleTheme(){const c=document.documentElement.getAttribute('data-theme');document.documentElement.setAttribute('data-theme',c==='dark'?'light':'dark');}
+run();
+</script>
+</body>
+</html>
