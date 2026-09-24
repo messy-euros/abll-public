@@ -1,0 +1,26 @@
+# Secrets: never commit the Zeffy API key
+.env
+.env.*
+*.env
+zeffy_api_key*
+ZEFFY_API_KEY*
+
+# Zeffy data pulled by scripts/ (real donor PII — never commit)
+zeffy_sample_FULL.json
+zeffy_events_FULL.json
+zeffy_sample_SCHEMA.json
+zeffy_events_SCHEMA.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
