@@ -31,16 +31,22 @@ def main():
     apply_schema()
     import test_pot_settle
     import test_identity
+    import test_mapper
+    import test_integration
     import test_concurrency
     import test_webhook_idempotency
+    import test_webhook_receiver
     from harness import run_suite
 
     totals = [0, 0, 0]
     for title, suite in [
         ("Suite 01 - pot/settle ledger (Postgres)", test_pot_settle.SUITE),
         ("Suite 02 - identity / aliases / merge (Postgres)", test_identity.SUITE),
+        ("Suite 03 - Zeffy mapper (pure)", test_mapper.SUITE),
+        ("Suite 04 - integration seam (Postgres)", test_integration.SUITE),
         ("NEW - true concurrency (real threads)", test_concurrency.SUITE),
         ("NEW - webhook redelivery idempotency", test_webhook_idempotency.SUITE),
+        ("NEW - webhook verification (spec 4.3)", test_webhook_receiver.SUITE),
     ]:
         g, r, e = run_suite(title, suite)
         totals[0] += g

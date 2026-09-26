@@ -1,50 +1,67 @@
-# Backend — Milestone 1: schema + the three transactions
+# Backend — Night at the Races
 
-This is step 1 of the spec's build order (§12): the Postgres schema and the
-three atomic transactions (§3), with suites 01 and 02 re-pointed from the
-in-browser prototypes to a **real database** — plus the two tests the spec says
-can only be run against real infrastructure (§10).
+The betting-ledger backend, built spec-first: every rule in the four executable
+test suites is ported to run against real Postgres, plus the tests the spec says
+need real infrastructure (concurrency, live webhook, verification).
 
-## What's here
+## Milestones
+
+- **1 — schema + the three transactions (§3):** `place_bet`, `topup`, `settle`,
+  identity resolve/merge (§5), crash recovery. Suites 01 & 02 green on Postgres.
+- **2 — webhook receiver (§4):** the `map()` mapper (§4.2), the map→credit seam,
+  and authenticity verification (§4.3 — re-fetch by id, optional HMAC). Suites
+  03 & 04 green, plus a receiver test proving spoofed/tampered POSTs credit
+  nothing.
+
+Still to come (build order §12): pre-provisioning job (§4.1), guest web app +
+auth (§6/§8), banker console (§7), deploy + venue-network load test (§9).
+
+## Files
 
 | File | What it is |
 |---|---|
-| `schema.sql` | The data model (§2): append-only `ledger_entries` + derived cache tables, the idempotency index, the one-account-per-alias key, and an append-only trigger. |
-| `db.py` | The data layer: `place_bet` (§3.1), `topup` (§3.2), `settle` (§3.3), identity `resolve`/merge (§5), and `rebuild_from_log` (crash recovery, §2/§9). Every money op runs in its own DB transaction. |
-| `tests/test_pot_settle.py` | Suite 01 (13 assertions) against Postgres. |
-| `tests/test_identity.py` | Suite 02 (9 assertions) against Postgres. |
-| `tests/test_concurrency.py` | **New (§10):** N real threads, no overspend. |
-| `tests/test_webhook_idempotency.py` | **New (§10):** concurrent redelivery credits once. |
-| `run_all.py` | Applies the schema and runs all four suites. |
+| `schema.sql` | Data model (§2): append-only `ledger_entries` + cache tables, idempotency index, one-account-per-alias key, append-only trigger. |
+| `db.py` | Data layer: `place_bet` (§3.1), `topup` (§3.2), `settle` (§3.3), identity resolve/merge (§5), `rebuild_from_log` (§2/§9). |
+| `mapper.py` | Pure `map_payment()` (§4.2): chips-only credit by `rate_id`, drinks excluded, identity keyed on contact UUID. **Refresh `BETTING_RATE_ID` each year.** |
+| `zeffy_client.py` | Read-API client for re-fetch-by-id verification (+ `FakeZeffy` for tests). |
+| `webhook.py` | Receiver core (§4.2/§4.3): verify → map → credit. Framework-agnostic. |
+| `app.py` | Flask adapter serving `POST /webhooks/zeffy`. **Deploy-time only** — tests don't need it. |
+| `tests/` | Suites 01–04 ported, plus concurrency, redelivery, and verification. |
+| `run_all.py` | Applies the schema and runs all seven suites. |
 
-## Run it
+## Run the tests
 
-Requires Python 3.10+ and a Postgres you can reach.
+Requires Python 3.10+ and a Postgres you can reach. (No Flask needed — the tests
+exercise `webhook.process_event` directly.)
 
 ```bash
 pip install "psycopg[binary]"
-
-# point at your database (defaults to a local dev socket if unset)
-export DATABASE_URL="postgres://user:pass@localhost:5432/natr"
-
+export DATABASE_URL="postgresql://youruser@localhost:5432/postgres"
 python run_all.py
 ```
 
-Expected: `TOTAL: 26 pass · 0 fail · 0 error`.
+Expected: `TOTAL: 51 pass · 0 fail · 0 error`.
 
-`run_all.py` **drops and recreates** all tables each run, so use a throwaway
+`run_all.py` **drops and recreates** all tables each run — use a throwaway
 database, never one with real data.
 
-## What this proves (and doesn't)
+## Serve the webhook (deploy-time)
 
-Green here means the ledger rules hold against a real, concurrent database:
-no overspend under simultaneous bets, webhook redelivery credits exactly once,
-money is conserved on settle, identities merge correctly, and every cache table
-rebuilds from the append-only log after a simulated crash.
+```bash
+pip install flask
+export ZEFFY_API_KEY=...            # read API, for re-fetch verification
+export ZEFFY_WEBHOOK_SECRET=...     # optional, if Zeffy sends a signature
+export DATABASE_URL=postgresql://...
+flask --app app run                 # point Zeffy's webhook at /webhooks/zeffy
+```
 
-Still **not** covered (later milestones): the HTTP layer (webhook receiver +
-signature/re-fetch verification, §4.3), the guest web app and auth (§6/§8), the
-banker console (§7), Zeffy pre-provisioning (§4.1), and a real
-venue-network load test (§9). The webhook test here exercises the DB-level
-idempotency guard directly; a full end-to-end test against a deployed endpoint
-comes once the receiver exists.
+Must sit behind HTTPS in production (§4.3, §8). The receiver returns 200 fast;
+Zeffy retries non-200 and idempotency makes retries harmless.
+
+## Security notes (§4.3)
+
+The webhook body is treated as an untrusted claim. Nothing in a POST is trusted
+for crediting — the receiver re-fetches the payment by id from the read API and
+credits only what that authoritative record says. An optional HMAC secret adds a
+signature check in front of that. `ZEFFY_API_KEY` / `ZEFFY_WEBHOOK_SECRET` come
+from the environment and must never be committed (already in `.gitignore`).
