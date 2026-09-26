@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Night at the Races — Betting</title>
+<style>
+  :root{
+    --green:#123c2b; --green-2:#0d2c20; --brass:#c7963b; --brass-2:#a97c28;
+    --paper:#f3ede0; --paper-2:#e7dec9; --ink:#1b1a16; --muted:#6f6857;
+    --win:#2f7d4f; --lose:#a5342b; --line:#d8cdb4;
+    --tap:64px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    font-family:"Avenir Next",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    background:var(--paper); color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+  .wrap{max-width:520px;margin:0 auto;min-height:100dvh;display:flex;flex-direction:column}
+
+  /* --- tote header: the balance is the thing you check most --- */
+  header.tote{
+    background:linear-gradient(var(--green),var(--green-2));
+    color:var(--paper); padding:18px 20px 20px;
+    border-bottom:3px solid var(--brass);
+    position:sticky; top:0; z-index:5;
+  }
+  .tote .title{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--brass);margin:0 0 2px}
+  .tote .name{font-size:15px;color:#e9e3d3;margin:0 0 12px;min-height:18px}
+  .balance{display:flex;align-items:baseline;gap:10px}
+  .balance .amt{font-size:52px;line-height:1;font-weight:700}
+  .balance .lbl{font-size:14px;color:#cfc7b2}
+  .chips-hint{font-size:13px;color:#cfc7b2;margin-top:6px}
+  .conn{float:right;font-size:12px;color:#cfc7b2}
+  .conn.bad{color:#f0c36b}
+
+  main{flex:1;padding:20px}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:16px}
+  h2{font-size:14px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:0 0 14px}
+
+  /* --- claim --- */
+  input[type=text]{
+    width:100%;font-size:20px;padding:16px;border:1.5px solid var(--line);
+    border-radius:12px;background:#fff;color:var(--ink);margin-bottom:12px
+  }
+  input:focus{outline:3px solid var(--brass);border-color:var(--brass)}
+  .seg{display:flex;gap:8px;margin-bottom:16px}
+  .seg button{flex:1;padding:12px;font-size:15px;border:1.5px solid var(--line);background:#fff;border-radius:10px;color:var(--muted)}
+  .seg button[aria-pressed=true]{background:var(--green);color:var(--paper);border-color:var(--green)}
+
+  /* --- horses --- */
+  .horses{display:grid;gap:10px}
+  .horse{
+    display:flex;align-items:center;gap:14px;min-height:var(--tap);
+    padding:12px 16px;border:2px solid var(--line);border-radius:12px;background:#fff;
+    font-size:19px;text-align:left;color:var(--ink);width:100%
+  }
+  .horse .no{
+    flex:none;width:38px;height:38px;border-radius:50%;background:var(--green);color:var(--paper);
+    display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px
+  }
+  .horse[aria-pressed=true]{border-color:var(--brass);background:#fbf4e4;box-shadow:0 0 0 2px var(--brass) inset}
+  .horse:disabled{opacity:.5}
+
+  /* --- chip stepper + bet --- */
+  .stepper{display:flex;align-items:center;justify-content:space-between;gap:14px;margin:16px 0}
+  .stepper .val{font-size:22px;font-weight:700}
+  .stepper button{width:56px;height:56px;border-radius:12px;border:2px solid var(--green);background:#fff;color:var(--green);font-size:28px;line-height:1}
+  .btn{
+    width:100%;min-height:var(--tap);border:none;border-radius:14px;
+    background:var(--brass);color:#231c07;font-size:20px;font-weight:700;
+  }
+  .btn:disabled{background:var(--paper-2);color:var(--muted)}
+  .btn.secondary{background:transparent;border:2px solid var(--line);color:var(--muted);font-weight:600;min-height:52px}
+
+  .msg{padding:12px 14px;border-radius:10px;font-size:15px;margin-bottom:14px;display:none}
+  .msg.show{display:block}
+  .msg.ok{background:#e4f0e7;color:var(--win)}
+  .msg.err{background:#f6e4e2;color:var(--lose)}
+  .recent{font-size:14px;color:var(--muted)}
+  .recent div{padding:6px 0;border-top:1px solid var(--line)}
+  .closed{color:var(--lose);font-weight:600}
+  .foot{padding:16px 20px;color:var(--muted);font-size:12px;text-align:center}
+  @media (prefers-reduced-motion:no-preference){
+    .flash{animation:flash .5s ease}
+    @keyframes flash{0%{background:#fbf4e4}100%{background:var(--paper)}}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="tote">
+    <span class="conn" id="conn"></span>
+    <p class="title">Night at the Races</p>
+    <p class="name" id="who"></p>
+    <div class="balance"><span class="amt num" id="bal">—</span><span class="lbl">in chips</span></div>
+    <div class="chips-hint" id="chipsHint"></div>
+  </header>
+
+  <main>
+    <!-- CLAIM -->
+    <section class="card" id="claimCard">
+      <h2>Check in to bet</h2>
+      <div class="seg" role="tablist">
+        <button id="tabCode" aria-pressed="true" onclick="setMode('code')">Claim code</button>
+        <button id="tabEmail" aria-pressed="false" onclick="setMode('email')">Email</button>
+      </div>
+      <input id="claimInput" type="text" autocomplete="one-time-code" autocapitalize="characters"
+             placeholder="Enter your claim code">
+      <div class="msg err" id="claimMsg"></div>
+      <button class="btn" id="claimBtn" onclick="doClaim()">Check in</button>
+    </section>
+
+    <!-- BET -->
+    <section id="betArea" hidden>
+      <div class="msg" id="betMsg"></div>
+      <section class="card" id="raceCard">
+        <h2 id="raceTitle">Current race</h2>
+        <div class="horses" id="horses"></div>
+        <div class="stepper" id="stepper">
+          <button aria-label="Fewer chips" onclick="bump(-1)">–</button>
+          <div class="val"><span class="num" id="chipCount">1</span> chip · <span class="num" id="chipMoney">$10</span></div>
+          <button aria-label="More chips" onclick="bump(1)">+</button>
+        </div>
+        <button class="btn" id="betBtn" onclick="doBet()" disabled>Tap a horse first</button>
+      </section>
+      <section class="card">
+        <h2>Your recent bets</h2>
+        <div class="recent" id="recent">No bets yet.</div>
+      </section>
+      <button class="btn secondary" onclick="signOut()">Sign out</button>
+    </section>
+  </main>
+  <div class="foot">Winnings land back in your chips automatically. Cash out any time at the bank.</div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const money = c => '$' + (c/100).toLocaleString('en-US',{minimumFractionDigits:0});
+let token = localStorage.getItem('natr_token') || null;
+let mode = 'code', pickedHorse = null, chips = 1, pollTimer = null, betting = false;
+
+function setMode(m){
+  mode = m;
+  $('#tabCode').setAttribute('aria-pressed', m==='code');
+  $('#tabEmail').setAttribute('aria-pressed', m==='email');
+  const inp = $('#claimInput');
+  inp.placeholder = m==='code' ? 'Enter your claim code' : 'Enter your email';
+  inp.value=''; inp.setAttribute('autocapitalize', m==='code'?'characters':'none');
+  inp.type = m==='email' ? 'email' : 'text';
+}
+
+async function api(path, body){
+  const opt = {method: body?'POST':'GET', headers:{}};
+  if(token) opt.headers['Authorization'] = 'Bearer ' + token;
+  if(body){ opt.headers['Content-Type']='application/json'; opt.body=JSON.stringify(body); }
+  const r = await fetch(path, opt);
+  return r.json();
+}
+
+async function doClaim(){
+  const v = $('#claimInput').value.trim();
+  if(!v){ return showClaimErr('Enter your ' + (mode==='code'?'claim code':'email') + '.'); }
+  $('#claimBtn').disabled = true; $('#claimBtn').textContent = 'Checking…';
+  try{
+    const res = await api('/api/claim', mode==='code' ? {code:v} : {email:v});
+    if(!res.ok){ showClaimErr(res.reason || 'Could not check you in.'); }
+    else { token = res.token; localStorage.setItem('natr_token', token); enterBetting(); }
+  }catch(e){ showClaimErr('Network hiccup — try again.'); }
+  $('#claimBtn').disabled = false; $('#claimBtn').textContent = 'Check in';
+}
+function showClaimErr(m){ const el=$('#claimMsg'); el.textContent=m; el.classList.add('show'); }
+
+function enterBetting(){
+  $('#claimCard').hidden = true; $('#betArea').hidden = false;
+  refresh(); startPolling();
+}
+function signOut(){
+  token=null; localStorage.removeItem('natr_token'); stopPolling();
+  $('#betArea').hidden=true; $('#claimCard').hidden=false;
+  $('#claimMsg').classList.remove('show'); $('#bal').textContent='—'; $('#who').textContent='';
+}
+
+function bump(d){ chips=Math.max(1,chips+d); $('#chipCount').textContent=chips; $('#chipMoney').textContent=money(chips*1000); }
+
+function setConn(ok){ const el=$('#conn'); if(ok){el.textContent='';el.classList.remove('bad');} else {el.textContent='reconnecting…';el.classList.add('bad');} }
+
+async function refresh(){
+  try{
+    const s = await api('/api/state');
+    setConn(true);
+    if(!s.ok){ signOut(); return; }
+    $('#bal').textContent = money(s.balance_cents);
+    $('#bal').classList.remove('flash'); void $('#bal').offsetWidth; $('#bal').classList.add('flash');
+    $('#chipsHint').textContent = Math.floor(s.balance_cents/1000) + ' chips available';
+    renderRace(s.race); renderRecent(s.recent_bets);
+  }catch(e){ setConn(false); }
+}
+
+function renderRace(race){
+  const box=$('#horses'), title=$('#raceTitle'), btn=$('#betBtn'), step=$('#stepper');
+  if(!race){ title.textContent='No race open right now'; box.innerHTML='<p style="color:var(--muted)">Sit tight — the next race opens soon.</p>'; btn.hidden=true; step.hidden=true; return; }
+  title.textContent = race.name || ('Race ' + race.race_id);
+  const open = race.open_for_bets;
+  step.hidden = !open; btn.hidden = !open;
+  if(!open){ box.innerHTML='<p class="closed">Betting is closed for this race.</p>'; return; }
+  const horses = (race.horses && race.horses.length) ? race.horses : [];
+  box.innerHTML='';
+  horses.forEach(h => {
+    const no = h.number ?? h; const nm = h.name || '';
+    const b=document.createElement('button');
+    b.className='horse'; b.setAttribute('aria-pressed', String(no)===String(pickedHorse));
+    b.innerHTML = `<span class="no num">${no}</span><span>${nm||('Horse '+no)}</span>`;
+    b.onclick = ()=>{ pickedHorse=String(no); box.dataset.race=race.race_id; renderRace(race); updateBetBtn(); };
+    box.appendChild(b);
+  });
+  updateBetBtn();
+}
+function updateBetBtn(){
+  const btn=$('#betBtn');
+  if(pickedHorse){ btn.disabled=false; btn.textContent = `Place ${chips==1?'$10':money(chips*1000)} on ${pickedHorse}`; }
+  else { btn.disabled=true; btn.textContent='Tap a horse first'; }
+}
+
+function renderRecent(bets){
+  const el=$('#recent');
+  if(!bets || !bets.length){ el.textContent='No bets yet.'; return; }
+  el.innerHTML = bets.map(b=>`<div>${money(-b.cents)} on ${b.horse||'—'}</div>`).join('');
+}
+
+async function doBet(){
+  if(betting || !pickedHorse) return;
+  const raceId = $('#horses').dataset.race;
+  betting=true; const btn=$('#betBtn'); btn.disabled=true; const prev=btn.textContent; btn.textContent='Placing…';
+  const attempt = () => api('/api/bet', {race_id:raceId, horse:pickedHorse, chips});
+  try{
+    let res;
+    try{ res = await attempt(); }
+    catch(_){ res = await attempt(); }        // one silent retry for a flaky network
+    if(res.ok){ betMsg('Bet placed — ' + money(chips*1000) + ' on ' + pickedHorse + '.', true); pickedHorse=null; chips=1; $('#chipCount').textContent=1; $('#chipMoney').textContent='$10'; }
+    else { betMsg(reason(res.reason), false); }
+  }catch(e){ betMsg("Couldn't reach the server — your chips are safe, try again.", false); }
+  betting=false; await refresh(); updateBetBtn();
+}
+function reason(r){
+  const m={'insufficient balance':'Not enough chips — see the bank to add more.',
+           'past post time':"Too late — betting's closed for this race.",
+           'race not open':'Betting is closed for this race.',
+           'no such race':'That race just closed — pick the next one.'};
+  return m[r] || (r || 'That bet didn’t go through.');
+}
+function betMsg(m, ok){ const el=$('#betMsg'); el.textContent=m; el.className='msg show '+(ok?'ok':'err'); }
+
+function startPolling(){ stopPolling(); pollTimer=setInterval(refresh, 4000); }
+function stopPolling(){ if(pollTimer) clearInterval(pollTimer); pollTimer=null; }
+
+// resume a session if the phone still has a token
+if(token){ enterBetting(); } else { setMode('code'); }
+</script>
+</body>
+</html>

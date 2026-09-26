@@ -12,12 +12,14 @@ need real infrastructure (concurrency, live webhook, verification, provisioning)
   and authenticity verification (§4.3 — re-fetch by id, optional HMAC). Suites
   03 & 04 green, plus spoofed/tampered POSTs credit nothing.
 - **3 — pre-provisioning (§4.1):** pull the campaign's contacts + payments the
-  night before; register everyone and pre-load chips. Reuses the mapper and the
-  webhook's credit path, so it's idempotent on re-run and shares idempotency
-  with the live webhook.
+  night before; register everyone and pre-load chips. Idempotent on re-run and
+  shares idempotency with the live webhook.
+- **4 — guest web app (§6/§8):** the QR-launched phone page. Claim by email or
+  check-in code → a signed session bound to the account; tap a horse, bet chips.
+  Every guard (overspend, late tap) lives in the §3.1 transaction, never trusted
+  from the phone. Winnings land back on settle.
 
-Still to come: guest web app + auth (§6/§8), banker console (§7), deploy +
-venue-network load test (§9).
+Still to come: banker console (§7), deploy + venue-network load test (§9).
 
 ## Files
 
@@ -29,9 +31,12 @@ venue-network load test (§9).
 | `zeffy_client.py` | Read-API client: re-fetch-by-id + list campaigns/payments/contacts (+ `FakeZeffy` for tests). |
 | `webhook.py` | Receiver core (§4.2/§4.3): verify → map → credit. Framework-agnostic. |
 | `provision.py` | Pre-provisioning job (§4.1). Runnable CLI with `--dry-run`. |
-| `app.py` | Flask adapter serving `POST /webhooks/zeffy`. **Deploy-time only.** |
-| `tests/` | Suites 01–04 ported, plus provisioning, concurrency, redelivery, verification. |
-| `run_all.py` | Applies the schema and runs all eight suites. |
+| `guest_api.py` | Guest app core (§6): claim, state, place bet in chips. |
+| `sessions.py` | HMAC-signed guest sessions bound to an account (§6/§8). |
+| `guest.html` | The QR-launched phone page (served by `app.py`). |
+| `app.py` | Flask adapter: webhook + guest routes + serves the page. **Deploy-time only.** |
+| `tests/` | Suites 01–04 ported, plus provisioning, guest app, concurrency, redelivery, verification. |
+| `run_all.py` | Applies the schema and runs all nine suites. |
 
 ## Run the tests
 
@@ -43,7 +48,7 @@ export DATABASE_URL="postgresql://youruser@localhost:5432/postgres"
 python run_all.py
 ```
 
-Expected: `TOTAL: 58 pass · 0 fail · 0 error`.
+Expected: `TOTAL: 68 pass · 0 fail · 0 error`.
 
 `run_all.py` **drops and recreates** all tables each run — use a throwaway
 database, never one with real data.
@@ -73,6 +78,13 @@ flask --app app run                  # point Zeffy's webhook at /webhooks/zeffy
 
 Behind HTTPS in production (§4.3, §8). Returns 200 fast; Zeffy retries non-200
 and idempotency makes retries harmless.
+
+## Guest app (§6)
+
+The same `flask --app app run` serves the guest phone page at `/` (the QR
+target) and its API: `POST /api/claim` (email or check-in code → signed session),
+`GET /api/state`, `POST /api/bet`. Set a real `GUEST_SESSION_SECRET` in
+production. Issue check-in codes with `db.issue_claim_code(conn, account_id)`.
 
 ## Security notes (§4.3)
 

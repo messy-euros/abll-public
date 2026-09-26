@@ -205,12 +205,13 @@ def topup_identity(conn, identity, cents, source, ref=None, use_contact=True):
 
 
 # ---- races ----------------------------------------------------------------
-def open_race(conn, race_id, lock_at, name=None, players_share=0.5):
+def open_race(conn, race_id, lock_at, name=None, players_share=0.5, horses=None):
+    import json as _json
     with conn.transaction():
         conn.execute(
-            "INSERT INTO races(race_id,name,lock_at,players_share,state) "
-            "VALUES(%s,%s,%s,%s,'open') ON CONFLICT (race_id) DO NOTHING",
-            (race_id, name, lock_at, players_share),
+            "INSERT INTO races(race_id,name,lock_at,players_share,horses,state) "
+            "VALUES(%s,%s,%s,%s,%s,'open') ON CONFLICT (race_id) DO NOTHING",
+            (race_id, name, lock_at, players_share, _json.dumps(horses or [])),
         )
 
 
@@ -345,6 +346,54 @@ def balance_for_identity(conn, identity, use_contact=True):
 
 def accounts(conn):
     return [r[0] for r in conn.execute("SELECT account_id FROM accounts").fetchall()]
+
+
+# ---- guest web app helpers (spec §6/§8) -----------------------------------
+def current_open_race(conn, now=None):
+    """The race a guest can currently bet on: open and not past post. Returns a
+    dict with its horses, or None. `now` is the same logical clock as bets."""
+    row = conn.execute(
+        "SELECT race_id,name,lock_at,horses,state FROM races "
+        "WHERE state='open' ORDER BY lock_at NULLS LAST LIMIT 1"
+    ).fetchone()
+    if row is None:
+        return None
+    race_id, name, lock_at, horses, state = row
+    open_for_bets = state == "open" and (lock_at is None or now is None or now <= lock_at)
+    return {"race_id": race_id, "name": name, "lock_at": lock_at,
+            "horses": horses, "state": state, "open_for_bets": open_for_bets}
+
+
+def recent_bets(conn, account_id, limit=10):
+    rows = conn.execute(
+        "SELECT race_id,horse,cents FROM bets WHERE account_id=%s "
+        "ORDER BY bet_id DESC LIMIT %s",
+        (account_id, limit),
+    ).fetchall()
+    return [{"race_id": r[0], "horse": r[1], "cents": r[2]} for r in rows]
+
+
+def issue_claim_code(conn, account_id, code=None):
+    """Create (or reuse) a claim code for an account. Codes avoid ambiguous
+    characters (no O/0/I/1). Idempotent per code."""
+    import secrets
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    if code is None:
+        code = "".join(secrets.choice(alphabet) for _ in range(6))
+    with conn.transaction():
+        conn.execute(
+            "INSERT INTO claim_codes(code,account_id) VALUES(%s,%s) "
+            "ON CONFLICT (code) DO NOTHING",
+            (code, account_id),
+        )
+    return code
+
+
+def account_for_claim_code(conn, code):
+    row = conn.execute(
+        "SELECT account_id FROM claim_codes WHERE code=%s", ((code or "").strip().upper(),)
+    ).fetchone()
+    return row[0] if row else None
 
 
 # ---- recovery: rebuild every cache table by replaying the log (§2, §9) -----

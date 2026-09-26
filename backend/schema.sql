@@ -69,7 +69,8 @@ CREATE TABLE races (
                    CHECK (state IN ('open','locked','settled')),
     lock_at        BIGINT,            -- logical clock in these suites (ms-ish)
     winning_horse  TEXT,
-    players_share  NUMERIC NOT NULL DEFAULT 0.5   -- players' fraction of the pot
+    players_share  NUMERIC NOT NULL DEFAULT 0.5,  -- players' fraction of the pot
+    horses         JSONB NOT NULL DEFAULT '[]'::jsonb  -- [{"number":"3","name":"..."}]
 );
 
 CREATE TABLE bets (
@@ -81,5 +82,15 @@ CREATE TABLE bets (
     ts          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX bets_by_race ON bets (race_id);
+
+-- Claim codes for the guest web app (spec §6/§8): a code handed out at check-in
+-- or printed on the Zeffy receipt maps to one account, so a guest can claim a
+-- signed session on their phone without a password.
+CREATE TABLE claim_codes (
+    code        TEXT PRIMARY KEY,
+    account_id  TEXT NOT NULL REFERENCES accounts(account_id),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX claim_codes_by_account ON claim_codes (account_id);
 
 COMMIT;

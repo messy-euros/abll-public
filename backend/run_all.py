@@ -19,8 +19,8 @@ def apply_schema():
     conn.autocommit = True
     # drop everything so the run is repeatable
     conn.execute(
-        "DROP TABLE IF EXISTS bets, balances, account_aliases, races, "
-        "ledger_entries, accounts CASCADE"
+        "DROP TABLE IF EXISTS claim_codes, bets, balances, account_aliases, "
+        "races, ledger_entries, accounts CASCADE"
     )
     conn.execute("DROP FUNCTION IF EXISTS ledger_is_append_only() CASCADE")
     conn.execute(sql)
@@ -34,6 +34,7 @@ def main():
     import test_mapper
     import test_integration
     import test_provisioning
+    import test_guest_app
     import test_concurrency
     import test_webhook_idempotency
     import test_webhook_receiver
@@ -46,6 +47,7 @@ def main():
         ("Suite 03 - Zeffy mapper (pure)", test_mapper.SUITE),
         ("Suite 04 - integration seam (Postgres)", test_integration.SUITE),
         ("NEW - pre-provisioning (spec 4.1)", test_provisioning.SUITE),
+        ("NEW - guest web app (spec 6/8)", test_guest_app.SUITE),
         ("NEW - true concurrency (real threads)", test_concurrency.SUITE),
         ("NEW - webhook redelivery idempotency", test_webhook_idempotency.SUITE),
         ("NEW - webhook verification (spec 4.3)", test_webhook_receiver.SUITE),
