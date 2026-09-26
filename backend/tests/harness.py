@@ -34,7 +34,7 @@ def reset(conn):
 def run_suite(title, tests):
     """tests: list of (name, fn). fn receives a fresh connection."""
     conn = DB.connect()
-    g = r = e = 0
+    g = r = e = n = 0
     print(f"\n=== {title} ===")
     for name, fn in tests:
         reset(conn)
@@ -42,13 +42,19 @@ def run_suite(title, tests):
             fn(conn)
             g += 1
             print(f"  PASS  {name}")
+        except NotImplementedError as ex:
+            n += 1
+            conn.rollback()
+            print(f"  RED   {name}\n          {ex}")
         except AssertionFail as ex:
             r += 1
             print(f"  FAIL  {name}\n          {ex}")
         except Exception as ex:  # noqa: BLE001
             e += 1
+            conn.rollback()
             print(f"  ERROR {name}\n          {type(ex).__name__}: {ex}")
             traceback.print_exc()
-    print(f"  ---> {g} pass · {r} fail · {e} error   ({len(tests)} tests)")
+    print(f"  ---> {g} pass · {r} fail · {n} red-not-implemented · {e} error   "
+          f"({len(tests)} tests)")
     conn.close()
-    return g, r, e
+    return g, r + n, e
