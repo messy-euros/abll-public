@@ -205,13 +205,16 @@ def topup_identity(conn, identity, cents, source, ref=None, use_contact=True):
 
 
 # ---- races ----------------------------------------------------------------
-def open_race(conn, race_id, lock_at, name=None, players_share=0.5, horses=None):
+def open_race(conn, race_id, closes_at, name=None, players_share=0.5, horses=None,
+              ordinal=None):
+    """Create an already-open race. (Suites/low-level path; the banker's
+    scheduled path is banker.open_race_now.) closes_at is the post time."""
     import json as _json
     with conn.transaction():
         conn.execute(
-            "INSERT INTO races(race_id,name,lock_at,players_share,horses,state) "
-            "VALUES(%s,%s,%s,%s,%s,'open') ON CONFLICT (race_id) DO NOTHING",
-            (race_id, name, lock_at, players_share, _json.dumps(horses or [])),
+            "INSERT INTO races(race_id,name,ordinal,closes_at,opens_at,players_share,horses,state) "
+            "VALUES(%s,%s,%s,%s,0,%s,%s,'open') ON CONFLICT (race_id) DO NOTHING",
+            (race_id, name, ordinal, closes_at, players_share, _json.dumps(horses or [])),
         )
 
 
@@ -227,15 +230,15 @@ def place_bet(conn, account_id, race_id, horse, cents, now):
     try:
         with conn.transaction():
             row = conn.execute(
-                "SELECT state,lock_at FROM races WHERE race_id=%s FOR UPDATE",
+                "SELECT state,closes_at FROM races WHERE race_id=%s FOR UPDATE",
                 (race_id,),
             ).fetchone()
             if row is None:
                 return {"ok": False, "reason": "no such race"}
-            state, lock_at = row
+            state, closes_at = row
             if state != "open":
                 return {"ok": False, "reason": "race not open"}
-            if lock_at is not None and now > lock_at:
+            if closes_at is not None and now > closes_at:
                 return {"ok": False, "reason": "past post time"}
 
             # atomic overspend guard: debit only if the funds are there
@@ -275,6 +278,32 @@ def debit_account(conn, account_id, cents):
             (account_id, -cents),
         )
     return {"ok": True}
+
+
+# ---- cash out at the bank (spec §6.5, §7) ---------------------------------
+def cashout(conn, account_id, cents):
+    """A guest hands chips back for real cash at the bank. Debits the balance
+    (never below zero) and logs a 'cashout' row so reconciliation can account
+    for money that physically left the till. Returns {'ok':bool,'reason':..}."""
+    if not (isinstance(cents, int) and cents > 0):
+        return {"ok": False, "reason": "invalid amount"}
+    try:
+        with conn.transaction():
+            cur = conn.execute(
+                "UPDATE balances SET balance_cents=balance_cents-%s "
+                "WHERE account_id=%s AND balance_cents>=%s",
+                (cents, account_id, cents),
+            )
+            if cur.rowcount == 0:
+                return {"ok": False, "reason": "insufficient balance"}
+            conn.execute(
+                "INSERT INTO ledger_entries(type,account_id,delta_cents,source) "
+                "VALUES('cashout',%s,%s,'cash')",
+                (account_id, -cents),
+            )
+        return {"ok": True, "balance_cents": balance(conn, account_id)}
+    except psycopg.errors.CheckViolation:
+        return {"ok": False, "reason": "insufficient balance"}
 
 
 # ---- §3.3 settle a race (money conserved) ---------------------------------
@@ -323,8 +352,9 @@ def settle(conn, race_id, winning_horse):
 
         assert paid + house_cut == pot, "conservation: payouts + house must equal pot"
         conn.execute(
-            "UPDATE races SET state='settled',winning_horse=%s WHERE race_id=%s",
-            (winning_horse, race_id),
+            "UPDATE races SET state='settled',winning_horse=%s,"
+            "pot_cents=%s,house_cut_cents=%s WHERE race_id=%s",
+            (winning_horse, pot, house_cut, race_id),
         )
     return {"ok": True, "pot": pot, "houseCut": house_cut,
             "payouts": [{"player": a, "cents": c} for a, c in payouts.items()]}
@@ -353,14 +383,14 @@ def current_open_race(conn, now=None):
     """The race a guest can currently bet on: open and not past post. Returns a
     dict with its horses, or None. `now` is the same logical clock as bets."""
     row = conn.execute(
-        "SELECT race_id,name,lock_at,horses,state FROM races "
-        "WHERE state='open' ORDER BY lock_at NULLS LAST LIMIT 1"
+        "SELECT race_id,name,closes_at,horses,state FROM races "
+        "WHERE state='open' ORDER BY closes_at NULLS LAST LIMIT 1"
     ).fetchone()
     if row is None:
         return None
-    race_id, name, lock_at, horses, state = row
-    open_for_bets = state == "open" and (lock_at is None or now is None or now <= lock_at)
-    return {"race_id": race_id, "name": name, "lock_at": lock_at,
+    race_id, name, closes_at, horses, state = row
+    open_for_bets = state == "open" and (closes_at is None or now is None or now <= closes_at)
+    return {"race_id": race_id, "name": name, "closes_at": closes_at, "lock_at": closes_at,
             "horses": horses, "state": state, "open_for_bets": open_for_bets}
 
 

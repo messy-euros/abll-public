@@ -138,6 +138,23 @@ def _reconciliation_balances_at_rest(c):
     ok(rec["balanced"], "credit_issued == outstanding + house + in-play (at rest)")
 
 
+def _cashout_debits_and_guards(c):
+    a = _fund(c, "a", D(50))
+    r = DB.cashout(c, a, D(30))                        # hand 3 chips back for cash
+    ok(r["ok"], "cash-out accepted")
+    eq(DB.balance(c, a), D(20), "balance reduced by the cash returned")
+    ok(not DB.cashout(c, a, D(50))["ok"], "can't cash out more than the balance")
+    eq(DB.balance(c, a), D(20), "over-cashout leaves balance untouched")
+
+
+def _reconciliation_tracks_cashout(c):
+    a = _fund(c, "a", D(100))                           # zeffy in 100
+    DB.cashout(c, a, D(40))                             # 40 leaves the till
+    rec = B.reconciliation(c)
+    eq(rec["cashed_out"], D(40), "cash-out tracked")
+    ok(rec["balanced"], "books balance with money handed back out")
+
+
 SUITE = [
  ("scheduled race is upcoming and not bettable", _scheduled_is_upcoming_not_bettable),
  ("card is ordered by ordinal with derived status", _card_is_ordered_with_derived_status),
@@ -149,10 +166,12 @@ SUITE = [
  ("settle stores pot + house on the race", _settle_stores_pot_and_house),
  ("guest sees their own win/loss result", _guest_sees_their_result),
  ("reconciliation balances at rest", _reconciliation_balances_at_rest),
+ ("cash-out debits and is guarded", _cashout_debits_and_guards),
+ ("reconciliation tracks cash handed back out", _reconciliation_tracks_cashout),
 ]
 
 
 if __name__ == "__main__":
     from harness import run_suite
-    g, r, e = run_suite("RED - race schedule / timing / announce (spec §6/§7)", SUITE)
+    g, r, e = run_suite("NEW - banker: schedule / timing / settle / reconcile (§6/§7)", SUITE)
     sys.exit(1 if (r or e) else 0)

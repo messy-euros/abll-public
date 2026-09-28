@@ -14,7 +14,7 @@ CREATE TABLE ledger_entries (
     ts           TIMESTAMPTZ  NOT NULL DEFAULT now(),
     type         TEXT         NOT NULL
                  CHECK (type IN ('open_account','attach_alias','merge',
-                                 'topup','bet','payout')),
+                                 'topup','bet','payout','cashout')),
     account_id   TEXT,                 -- null only for pure alias/merge rows carrying it in meta
     delta_cents  BIGINT,               -- signed; + topup/payout, - bet (money rows only)
     race_id      TEXT,                 -- for bet / payout
@@ -63,14 +63,19 @@ CREATE TABLE balances (
 );
 
 CREATE TABLE races (
-    race_id        TEXT PRIMARY KEY,
-    name           TEXT,
-    state          TEXT NOT NULL DEFAULT 'open'
-                   CHECK (state IN ('open','locked','settled')),
-    lock_at        BIGINT,            -- logical clock in these suites (ms-ish)
-    winning_horse  TEXT,
-    players_share  NUMERIC NOT NULL DEFAULT 0.5,  -- players' fraction of the pot
-    horses         JSONB NOT NULL DEFAULT '[]'::jsonb  -- [{"number":"3","name":"..."}]
+    race_id         TEXT PRIMARY KEY,
+    name            TEXT,
+    ordinal         INT,               -- card order: Race 1, 2, 3...
+    state           TEXT NOT NULL DEFAULT 'open'
+                    CHECK (state IN ('scheduled','open','locked','settled')),
+    planned_at      BIGINT,            -- advisory "≈ 8:15" shown to guests
+    opens_at        BIGINT,            -- when the banker actually opened it
+    closes_at       BIGINT,            -- post time; the txn enforces it, banker can move it
+    winning_horse   TEXT,
+    players_share   NUMERIC NOT NULL DEFAULT 0.5,  -- players' fraction of the pot
+    horses          JSONB NOT NULL DEFAULT '[]'::jsonb,  -- [{"number":"3","name":".."}]
+    pot_cents       BIGINT,            -- filled at settle, for announce + reconciliation
+    house_cut_cents BIGINT
 );
 
 CREATE TABLE bets (
