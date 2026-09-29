@@ -27,16 +27,15 @@ def _unb64(s: str) -> bytes:
     return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
 
 
-def issue(account_id: str, ttl: int = DEFAULT_TTL, secret: str = None) -> str:
+def issue(account_id: str, ttl: int = DEFAULT_TTL, secret: str = None, role: str = "guest") -> str:
     secret = secret or SECRET
-    payload = {"acct": account_id, "exp": int(time.time()) + ttl}
+    payload = {"acct": account_id, "role": role, "exp": int(time.time()) + ttl}
     body = _b64(json.dumps(payload, separators=(",", ":")).encode())
     sig = _b64(hmac.new(secret.encode(), body.encode(), hashlib.sha256).digest())
     return f"{body}.{sig}"
 
 
-def verify(token: str, secret: str = None):
-    """Return the account_id for a valid, unexpired token, else None."""
+def _payload(token: str, secret: str = None):
     secret = secret or SECRET
     if not token or "." not in token:
         return None
@@ -50,4 +49,16 @@ def verify(token: str, secret: str = None):
         return None
     if int(payload.get("exp", 0)) < int(time.time()):
         return None
-    return payload.get("acct")
+    return payload
+
+
+def verify(token: str, secret: str = None):
+    """Return the account_id for a valid, unexpired token, else None."""
+    p = _payload(token, secret)
+    return p.get("acct") if p else None
+
+
+def verify_role(token: str, secret: str = None):
+    """Return (subject, role) for a valid token, else (None, None)."""
+    p = _payload(token, secret)
+    return (p.get("acct"), p.get("role")) if p else (None, None)

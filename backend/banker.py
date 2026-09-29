@@ -141,10 +141,10 @@ def reconciliation(conn):
     house_cut = one("SELECT COALESCE(SUM(house_cut_cents),0) FROM races "
                     "WHERE state='settled'")
     outstanding = one("SELECT COALESCE(SUM(balance_cents),0) FROM balances")
-    staked_in_open = -one(
-        "SELECT COALESCE(SUM(b.delta_cents),0) FROM ledger_entries b "
+    staked_in_open = one(
+        "SELECT COALESCE(SUM(b.cents),0) FROM bets b "
         "JOIN races r ON r.race_id=b.race_id "
-        "WHERE b.type='bet' AND r.state<>'settled'")
+        "WHERE NOT b.voided AND r.state<>'settled'")
     balanced = credit_issued == outstanding + house_cut + staked_in_open + cashed_out
     return {
         "cash_in": cash_in, "zeffy_in": zeffy_in, "credit_issued": credit_issued,

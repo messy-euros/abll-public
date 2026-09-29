@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Night at the Races — Banker Console</title>
+<style>
+  :root{--green:#123c2b;--green-2:#0d2c20;--brass:#c7963b;--brass-2:#a97c28;--paper:#f3ede0;
+    --paper-2:#e7dec9;--ink:#1b1a16;--muted:#6f6857;--win:#2f7d4f;--lose:#a5342b;--line:#d8cdb4;--live:#1d6b46}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:#e5dcc7;color:var(--ink)}
+  body{font-family:"Avenir Next",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+  .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+  header{background:linear-gradient(var(--green),var(--green-2));color:var(--paper);padding:14px 18px;border-bottom:3px solid var(--brass);position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  header h1{margin:0;font-size:16px;letter-spacing:.05em}
+  header .spacer{flex:1}
+  .hbadge{font-size:13px;font-weight:700;padding:6px 12px;border-radius:9px}
+  .hbadge.ok{background:#dff0e5;color:var(--win)} .hbadge.bad{background:#f6e4e2;color:var(--lose)}
+  header button{background:transparent;border:1.5px solid rgba(255,255,255,.4);color:var(--paper);border-radius:9px;padding:8px 12px;font-size:13px}
+  .wrap{max-width:1100px;margin:0 auto;padding:16px;display:grid;grid-template-columns:1fr;gap:16px}
+  @media(min-width:920px){.wrap{grid-template-columns:1.4fr .9fr}.full{grid-column:1/-1}}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:16px}
+  h2{font-size:12.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 12px}
+  .row{display:flex;align-items:center;gap:10px;flex-wrap:wrap} .spacer{flex:1}
+  button.act{border:none;border-radius:10px;padding:10px 14px;font-size:14px;font-weight:600;background:var(--green);color:var(--paper)}
+  button.act.ghost{background:#fff;border:1.5px solid var(--line);color:var(--ink)}
+  button.act.brass{background:var(--brass);color:#231c07} button.act.danger{background:#b3382c;color:#fff;box-shadow:inset 0 0 0 1px #8f2c22}
+  button.act.step{min-width:44px;font-size:19px;font-weight:700;padding:8px 0;text-align:center}
+  button.act:disabled{opacity:.4}
+  input,select{padding:9px;border:1.5px solid var(--line);border-radius:9px;background:#fff;font-size:14px}
+  input.mini{width:60px;text-align:center} input.amt{width:96px}
+  .lbl{font-size:12px;color:var(--muted)}
+  .race{border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:10px;background:#fff}
+  .rnum{flex:none;min-width:54px;height:54px;padding:0 8px;border-radius:12px;background:var(--brass);color:#231c07;display:flex;flex-direction:column;align-items:center;justify-content:center;font-weight:800;line-height:1;box-shadow:inset 0 0 0 2px var(--brass-2)}
+  .rnum.done{background:var(--green);color:var(--paper);box-shadow:inset 0 0 0 2px var(--brass)}
+  .rnum .k{font-size:9px;letter-spacing:.12em;text-transform:uppercase;opacity:.85;margin-bottom:2px}.rnum .n{font-size:25px}
+  .rname{font-size:16px;font-weight:600}.sub{font-size:12.5px;color:var(--muted)}
+  .pill{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 9px;border-radius:20px}
+  .pill.upcoming{background:#efe7d3;color:var(--muted)}.pill.live{background:#dff0e5;color:var(--live)}
+  .pill.closed{background:#f2e6d3;color:var(--brass-2)}.pill.settled{background:#e6e0d0;color:var(--ink)}
+  .controls{margin-top:10px}
+  .lockrow{margin-top:12px;padding-top:11px;border-top:1px dashed var(--line);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .lockhint{font-size:12px;color:var(--muted);max-width:230px;line-height:1.35}
+  .settlerow{margin-top:12px;padding-top:11px;border-top:1px dashed var(--line)}
+  .recon .line{display:flex;justify-content:space-between;padding:6px 0;border-top:1px solid var(--line);font-size:14px}
+  .recon .line:first-child{border-top:none}.recon .k{color:var(--muted)}.recon .v{font-weight:600}
+  .badge{display:inline-flex;gap:8px;padding:8px 14px;border-radius:10px;font-weight:700;font-size:14px}
+  .badge.ok{background:#dff0e5;color:var(--win)}.badge.bad{background:#f6e4e2;color:var(--lose)}
+  .gres{padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;margin-bottom:6px;cursor:pointer}
+  .betline{display:flex;align-items:center;gap:8px;font-size:13.5px;padding:5px 0;border-top:1px solid var(--line)}
+  .betline.voided{opacity:.5;text-decoration:line-through}
+  .msg{padding:10px 12px;border-radius:9px;font-size:13.5px;margin-bottom:10px;display:none}
+  .msg.show{display:block}.msg.ok{background:#e4f0e7;color:var(--win)}.msg.err{background:#f6e4e2;color:var(--lose)}
+  /* login */
+  .login{max-width:380px;margin:12vh auto;padding:24px;text-align:center}
+  .login input{width:100%;font-size:18px;margin:14px 0;padding:14px}
+  .login button{width:100%}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const $=s=>document.querySelector(s);
+const money=c=>'$'+((c||0)/100).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0});
+let token=localStorage.getItem('natr_banker')||null;
+let clockOffset=0;            // serverNow - localNow
+const now=()=>Math.floor(Date.now()/1000)+clockOffset;
+let winnerPick={};            // raceId -> chosen horse (persists across polls)
+let addMin=2, extMin=1;       // form values kept in JS so polls don't wipe them
+let desk={query:'', results:[], guest:null, amt:20};
+let pollTimer=null, lastCard=null, lastRecon=null;
+
+async function api(path, body){
+  const opt={method:body?'POST':'GET',headers:{}};
+  if(token) opt.headers['Authorization']='Bearer '+token;
+  if(body){opt.headers['Content-Type']='application/json';opt.body=JSON.stringify(body);}
+  const r=await fetch(path,opt); return r.json();
+}
+
+/* ---------------- login ---------------- */
+function renderLogin(err){
+  document.getElementById('app').innerHTML=`
+    <div class="card login">
+      <h1 style="margin:0 0 4px">Banker Console</h1>
+      <div class="sub">Night at the Races · staff only</div>
+      <input id="pw" type="password" placeholder="Console password" onkeydown="if(event.key==='Enter')doLogin()">
+      <div class="msg err ${err?'show':''}">${err||''}</div>
+      <button class="act" onclick="doLogin()">Sign in</button>
+    </div>`;
+  setTimeout(()=>document.getElementById('pw')?.focus(),50);
+}
+async function doLogin(){
+  const pw=document.getElementById('pw').value;
+  const r=await api('/banker/login',{password:pw});
+  if(r.ok){ token=r.token; localStorage.setItem('natr_banker',token); boot(); }
+  else renderLogin('Wrong password.');
+}
+function signOut(){ token=null; localStorage.removeItem('natr_banker'); stopPoll(); renderLogin(); }
+
+/* ---------------- console shell ---------------- */
+function renderShell(){
+  document.getElementById('app').innerHTML=`
+    <header>
+      <h1>🏇 Banker Console</h1>
+      <span id="hbadge"></span>
+      <span class="spacer"></span>
+      <button onclick="signOut()">Sign out</button>
+    </header>
+    <div class="wrap">
+      <div class="card full" id="raceCard"><h2>Race control</h2><div id="races"></div>
+        <div style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)">
+          <h2>Add a race to the card</h2>
+          <div class="row">
+            <input id="addName" placeholder="Name (e.g. The Paddock Dash)" style="flex:1;min-width:160px" oninput="0">
+            <input id="addHorses" placeholder="Horses: 1:Comet, 3:Biscuit, 7:Bolt" style="flex:2;min-width:200px">
+            <button class="act ghost" onclick="addRace()">Add race</button>
+          </div>
+        </div>
+      </div>
+      <div class="card" id="deskCard"><h2>Cash desk</h2><div id="desk"></div></div>
+      <div class="card recon" id="reconCard"><h2>Reconciliation — watched all night (§7)</h2>
+        <div id="reconLines"></div><div style="margin-top:12px" id="reconBadge"></div></div>
+    </div>`;
+}
+
+/* ---------------- polling ---------------- */
+async function refresh(){
+  const d=await api('/banker/state');
+  if(!d.ok){ if(d.reason&&d.reason.includes('banker')) signOut(); return; }
+  clockOffset = d.now - Math.floor(Date.now()/1000);
+  lastCard=d.card; lastRecon=d.recon;
+  renderCard(); renderRecon();
+}
+function startPoll(){ stopPoll(); pollTimer=setInterval(()=>{ if(document.getElementById('races')){renderCard();} refresh(); }, 3000); }
+function stopPoll(){ if(pollTimer)clearInterval(pollTimer); pollTimer=null; }
+
+/* ---------------- race control ---------------- */
+function cd(r){ const s=Math.max(0,(r.closes_at||0)-now()); const m=Math.floor(s/60); return (m>0?m+'m ':'')+(s%60)+'s'; }
+function statusOf(r){ return r.status; }
+
+function renderCard(){
+  if(!lastCard) return;
+  const box=$('#races'); if(!box) return;
+  const active=document.activeElement&&document.activeElement.id;
+  box.innerHTML='';
+  lastCard.races.forEach(r=>{
+    const st=r.status; const el=document.createElement('div'); el.className='race';
+    const short=r.name||('Race '+r.ordinal);
+    let line2 = st==='settled'
+      ? `<span class="sub">Winner #${r.winning_horse} · pot ${money(r.pot_cents)} · house ${money(r.house_cut_cents)}</span>`
+      : `<span class="sub">${(r.horses||[]).length} horses${st==='live'&&r.closes_at!=null?' · closes in '+cd(r):''}${st==='live'&&r.closes_at==null?' · open (no clock)':''}</span>`;
+    let ctrl='';
+    if(st==='upcoming') ctrl=`<div class="row"><input class="mini" id="ow-${r.race_id}" type="number" min="1" value="${addMin}" oninput="addMin=this.value"><span class="lbl">min clock</span><button class="act" onclick="openRace('${r.race_id}',true)">Open</button><button class="act ghost" onclick="openRace('${r.race_id}',false)">Open · no clock</button></div>`;
+    else if(st==='live') ctrl=`<div class="row"><span class="lbl">Adjust clock</span><button class="act ghost step" onclick="bumpClose('${r.race_id}',-1)">−</button><input class="mini" id="ex-${r.race_id}" type="number" min="1" value="${extMin}" oninput="extMin=this.value"><span class="lbl">min</span><button class="act ghost step" onclick="bumpClose('${r.race_id}',1)">+</button></div>`
+      + `<div class="lockrow"><button class="act danger" onclick="lockRace('${r.race_id}')">🔒 Lock now — end betting</button><span class="lockhint">Final step to close this race, if the clock hasn’t already run out.</span></div>`;
+    let settleUI='';
+    if(st==='closed'||st==='live'){
+      const opts=(r.horses||[]).map(h=>`<option value="${h.number}">#${h.number} ${h.name||''}</option>`).join('');
+      settleUI=`<div class="settlerow row"><span class="lbl">Winner</span><select id="win-${r.race_id}" onchange="winnerPick['${r.race_id}']=this.value">${opts}</select><button class="act brass" onclick="settle('${r.race_id}')">Settle & announce</button></div>`;
+    }
+    el.innerHTML=`<div class="row"><div class="rnum ${st==='settled'?'done':''}"><span class="k">Race</span><span class="n num">${r.ordinal}</span></div>
+      <div style="flex:1;min-width:0"><div class="rname">${short}</div><div style="margin-top:4px">${line2}</div></div>
+      <span class="pill ${st}">${st}</span></div><div class="controls">${ctrl}</div>${settleUI}`;
+    box.appendChild(el);
+    // restore persisted winner pick
+    const sel=document.getElementById('win-'+r.race_id);
+    if(sel && winnerPick[r.race_id]) sel.value=winnerPick[r.race_id];
+  });
+  if(active){ const el=document.getElementById(active); if(el) el.focus(); }
+}
+
+async function addRace(){
+  const name=$('#addName').value.trim();
+  const horses=($('#addHorses').value||'').split(',').map(s=>s.trim()).filter(Boolean).map(tok=>{
+    const [no,...nm]=tok.split(':'); return {number:no.trim(), name:nm.join(':').trim()||('Horse '+no.trim())};
+  });
+  if(!name||!horses.length){ return; }
+  const ordinal=(lastCard?lastCard.races.length:0)+1;
+  await api('/banker/race/schedule',{race_id:'R'+Date.now(), ordinal, name, horses});
+  $('#addName').value=''; $('#addHorses').value=''; refresh();
+}
+async function openRace(id, clocked){ const w=clocked?Math.max(1,parseInt(addMin)||2)*60:null; await api('/banker/race/open',{race_id:id, window_secs:w}); refresh(); }
+async function bumpClose(id, sign){ const r=lastCard.races.find(x=>x.race_id===id); const m=Math.max(1,parseInt(extMin)||1);
+  const base=r.closes_at!=null?r.closes_at:now(); const nc=Math.max(now(), base+sign*m*60); await api('/banker/race/extend',{race_id:id,new_closes_at:nc}); refresh(); }
+async function lockRace(id){ await api('/banker/race/lock',{race_id:id}); refresh(); }
+async function settle(id){
+  const winner=winnerPick[id] || (document.getElementById('win-'+id)&&document.getElementById('win-'+id).value);
+  const r=lastCard.races.find(x=>x.race_id===id);
+  const hn=(r.horses.find(h=>String(h.number)===String(winner))||{}).name||'';
+  if(!confirm(`Settle Race ${r.ordinal} — winner #${winner} ${hn}?\nThis pays out winners and cannot be undone.`)) return;
+  const res=await api('/banker/race/settle',{race_id:id, winning_horse:winner});
+  refresh();
+}
+
+/* ---------------- cash desk ---------------- */
+function renderDesk(){
+  const box=$('#desk'); if(!box) return;
+  const active=document.activeElement&&document.activeElement.id;
+  let html=`<div class="row"><input id="q" placeholder="Find a guest by name or email" style="flex:1" value="${desk.query.replace(/"/g,'&quot;')}" oninput="desk.query=this.value" onkeydown="if(event.key==='Enter')findGuest()"><button class="act ghost" onclick="findGuest()">Search</button></div>`;
+  if(desk.results.length && !desk.guest){ html+='<div style="margin-top:10px">'+desk.results.map(g=>`<div class="gres" onclick="openGuest('${g.account_id}')"><b>${g.label||g.account_id}</b> · <span class="num">${money(g.balance_cents)}</span></div>`).join('')+'</div>'; }
+  if(desk.guest){ const G=desk.guest;
+    html+=`<div style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)">
+      <div class="row"><b style="font-size:16px">${G.label||G.account_id}</b><span class="spacer"></span><button class="act ghost" onclick="desk.guest=null;renderDesk()">← back</button></div>
+      <div class="sub" style="margin:4px 0 2px">Balance <b class="num">${money(G.balance_cents)}</b>${G.claim_code?' · code <b>'+G.claim_code+'</b>':''}</div>
+      <div class="sub">${(G.aliases||[]).join(' · ')}</div>
+      <div class="row" style="margin-top:12px"><span class="lbl">$</span><input class="amt" id="amt" type="number" min="1" value="${desk.amt}" oninput="desk.amt=this.value">
+        <button class="act ghost" onclick="deskTopUp()">Top up cash</button><button class="act ghost" onclick="deskCashOut()">Cash out</button>
+        ${G.claim_code?'':'<button class="act ghost" onclick="deskCode()">Issue claim code</button>'}</div>
+      <div style="margin-top:12px"><div class="lbl" style="margin-bottom:4px">Recent bets</div>${
+        (G.bets||[]).length?G.bets.map(b=>`<div class="betline ${b.voided?'voided':''}"><span class="num">${money(b.cents)}</span> on ${b.horse||'—'} <span class="sub">(${b.race_id||'—'})</span><span class="spacer"></span>${b.voided?'<span class="sub">voided</span>':`<button class="act danger" style="padding:5px 10px;font-size:12px" onclick="voidBet(${b.bet_id})">Void</button>`}</div>`).join(''):'<div class="sub">none</div>'}</div>
+    </div>`;
+  }
+  html+=`<div class="msg ${desk.msg?'show '+(desk.msgok?'ok':'err'):''}" style="margin-top:10px">${desk.msg||''}</div>`;
+  box.innerHTML=html;
+  if(active){ const el=document.getElementById(active); if(el){ el.focus(); if(el.setSelectionRange&&el.type!=='number'){try{el.setSelectionRange(el.value.length,el.value.length)}catch(e){}} } }
+}
+async function findGuest(){ const r=await api('/banker/guest/find',{query:desk.query}); desk.results=r.results||[]; desk.guest=null; deskMsg('',true); renderDesk(); }
+async function openGuest(id){ const r=await api('/banker/guest',{account_id:id}); desk.guest=r.guest; renderDesk(); }
+async function reloadGuest(){ if(desk.guest) await openGuest(desk.guest.account_id); }
+async function deskTopUp(){ const c=Math.max(1,parseInt(desk.amt)||0)*100; const r=await api('/banker/cash/topup',{account_id:desk.guest.account_id,cents:c}); r.ok?deskMsg('Topped up '+money(c),true):deskMsg(r.reason,false); await reloadGuest(); refresh(); }
+async function deskCashOut(){ const c=Math.max(1,parseInt(desk.amt)||0)*100; const r=await api('/banker/cash/cashout',{account_id:desk.guest.account_id,cents:c}); r.ok?deskMsg('Cashed out '+money(c),true):deskMsg(r.reason||'Failed',false); await reloadGuest(); refresh(); }
+async function deskCode(){ const r=await api('/banker/claimcode',{account_id:desk.guest.account_id}); if(r.ok)deskMsg('Claim code: '+r.code,true); await reloadGuest(); }
+async function voidBet(id){ if(!confirm('Void this bet and refund the stake?')) return; const r=await api('/banker/bet/void',{bet_id:id}); r.ok?deskMsg('Voided · refunded '+money(r.refunded_cents),true):deskMsg(r.reason,false); await reloadGuest(); refresh(); }
+function deskMsg(m,ok){ desk.msg=m; desk.msgok=ok; }
+
+/* ---------------- reconciliation ---------------- */
+function renderRecon(){
+  if(!lastRecon) return; const R=lastRecon;
+  const rows=[['Cash in',R.cash_in],['Zeffy in',R.zeffy_in],['Credit issued',R.credit_issued],
+    ['Outstanding balances',R.outstanding_balances],['House cut',R.house_cut],['Chips in play',R.staked_in_open_races],['Cash paid out',R.cashed_out]];
+  const rl=$('#reconLines'); if(rl) rl.innerHTML=rows.map(([k,v])=>`<div class="line"><span class="k">${k}</span><span class="v num">${money(v)}</span></div>`).join('');
+  const badge = R.balanced?`<span class="badge ok">✓ Balanced</span>`:`<span class="badge bad">✗ Off — investigate</span>`;
+  const rb=$('#reconBadge'); if(rb) rb.innerHTML=badge;
+  const hb=$('#hbadge'); if(hb) hb.innerHTML=R.balanced?`<span class="hbadge ok">✓ Balanced</span>`:`<span class="hbadge bad">✗ Off</span>`;
+}
+
+/* ---------------- boot ---------------- */
+function boot(){ renderShell(); renderDesk(); refresh(); startPoll(); }
+if(token) boot(); else renderLogin();
+</script>
+</body>
+</html>

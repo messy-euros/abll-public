@@ -14,7 +14,7 @@ CREATE TABLE ledger_entries (
     ts           TIMESTAMPTZ  NOT NULL DEFAULT now(),
     type         TEXT         NOT NULL
                  CHECK (type IN ('open_account','attach_alias','merge',
-                                 'topup','bet','payout','cashout')),
+                                 'topup','bet','payout','cashout','void')),
     account_id   TEXT,                 -- null only for pure alias/merge rows carrying it in meta
     delta_cents  BIGINT,               -- signed; + topup/payout, - bet (money rows only)
     race_id      TEXT,                 -- for bet / payout
@@ -84,6 +84,7 @@ CREATE TABLE bets (
     race_id     TEXT,
     horse       TEXT,
     cents       BIGINT NOT NULL,
+    voided      BOOLEAN NOT NULL DEFAULT false,  -- banker void (spec §7); excluded from the pot
     ts          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX bets_by_race ON bets (race_id);

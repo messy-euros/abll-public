@@ -318,7 +318,8 @@ def settle(conn, race_id, winning_horse):
         players_share = float(row[1])
 
         bets = conn.execute(
-            "SELECT account_id,horse,cents FROM bets WHERE race_id=%s", (race_id,)
+            "SELECT account_id,horse,cents FROM bets WHERE race_id=%s AND NOT voided",
+            (race_id,)
         ).fetchall()
         pot = sum(b[2] for b in bets)
         winners = [b for b in bets if b[1] == winning_horse]
@@ -424,6 +425,77 @@ def account_for_claim_code(conn, code):
         "SELECT account_id FROM claim_codes WHERE code=%s", ((code or "").strip().upper(),)
     ).fetchone()
     return row[0] if row else None
+
+
+# ---- banker console helpers (spec §7) -------------------------------------
+def void_bet(conn, bet_id):
+    """Banker undoes a genuine mistake bet: refund the stake to the balance and
+    exclude it from the pot. Append-only — logs a 'void' reversing entry; the
+    original bet row stays for audit, flagged voided. Only before settle."""
+    with conn.transaction():
+        row = conn.execute(
+            "SELECT account_id,race_id,cents,voided FROM bets WHERE bet_id=%s FOR UPDATE",
+            (bet_id,),
+        ).fetchone()
+        if row is None:
+            return {"ok": False, "reason": "no such bet"}
+        account_id, race_id, cents, voided = row
+        if voided:
+            return {"ok": False, "reason": "already voided"}
+        if race_id is not None:
+            st = conn.execute("SELECT state FROM races WHERE race_id=%s",
+                              (race_id,)).fetchone()
+            if st and st[0] == "settled":
+                return {"ok": False, "reason": "race already settled"}
+        conn.execute("UPDATE bets SET voided=true WHERE bet_id=%s", (bet_id,))
+        conn.execute(
+            "UPDATE balances SET balance_cents=balance_cents+%s WHERE account_id=%s",
+            (cents, account_id),
+        )
+        conn.execute(
+            "INSERT INTO ledger_entries(type,account_id,delta_cents,race_id,meta) "
+            "VALUES('void',%s,%s,%s,jsonb_build_object('bet_id',%s::bigint))",
+            (account_id, cents, race_id, bet_id),
+        )
+    return {"ok": True, "refunded_cents": cents, "account_id": account_id,
+            "balance_cents": balance(conn, account_id)}
+
+
+def find_accounts(conn, query, limit=10):
+    """Search for a guest by email alias or name label (for the cash desk)."""
+    q = f"%{(query or '').strip().lower()}%"
+    rows = conn.execute(
+        "SELECT DISTINCT a.account_id, a.label, b.balance_cents "
+        "FROM accounts a "
+        "LEFT JOIN balances b ON b.account_id=a.account_id "
+        "LEFT JOIN account_aliases al ON al.account_id=a.account_id "
+        "WHERE lower(COALESCE(a.label,'')) LIKE %s OR lower(al.alias) LIKE %s "
+        "ORDER BY a.label NULLS LAST LIMIT %s",
+        (q, q, limit),
+    ).fetchall()
+    return [{"account_id": r[0], "label": r[1], "balance_cents": r[2] or 0} for r in rows]
+
+
+def account_summary(conn, account_id):
+    """Everything the banker needs about one guest."""
+    label = conn.execute("SELECT label FROM accounts WHERE account_id=%s",
+                         (account_id,)).fetchone()
+    if label is None:
+        return None
+    aliases = [r[0] for r in conn.execute(
+        "SELECT alias FROM account_aliases WHERE account_id=%s", (account_id,)).fetchall()]
+    code = conn.execute("SELECT code FROM claim_codes WHERE account_id=%s LIMIT 1",
+                        (account_id,)).fetchone()
+    bets = conn.execute(
+        "SELECT bet_id,race_id,horse,cents,voided FROM bets WHERE account_id=%s "
+        "ORDER BY bet_id DESC LIMIT 20", (account_id,)).fetchall()
+    return {
+        "account_id": account_id, "label": label[0],
+        "balance_cents": balance(conn, account_id), "aliases": aliases,
+        "claim_code": code[0] if code else None,
+        "bets": [{"bet_id": b[0], "race_id": b[1], "horse": b[2],
+                  "cents": b[3], "voided": b[4]} for b in bets],
+    }
 
 
 # ---- recovery: rebuild every cache table by replaying the log (§2, §9) -----

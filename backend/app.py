@@ -26,6 +26,7 @@ import pathlib
 import db as DB
 import webhook
 import guest_api
+import banker_api
 from zeffy_client import ZeffyClient
 
 try:
@@ -97,6 +98,94 @@ def create_app():
             conn.close()
         code = 200 if res.get("ok") else (401 if res.get("reason") == "not signed in" else 400)
         return jsonify(res), code
+
+    # ---- banker console (spec §7) -----------------------------------------
+    @app.get("/banker")
+    def banker_page():
+        return send_file(HERE / "banker_console.html")
+
+    @app.post("/banker/login")
+    def banker_login():
+        body = request.get_json(silent=True) or {}
+        return jsonify(banker_api.login(body.get("password")))
+
+    def _bank_call(fn):
+        conn = DB.connect()
+        try:
+            res = fn(conn, _bearer(request))
+        finally:
+            conn.close()
+        code = 200 if res.get("ok") else (
+            401 if str(res.get("reason", "")).endswith("banker") else 400)
+        return jsonify(res), code
+
+    @app.get("/banker/state")
+    def banker_state():
+        return _bank_call(lambda c, t: banker_api.dashboard(c, t, now=int(time.time())))
+
+    @app.post("/banker/race/schedule")
+    def banker_schedule():
+        b = request.get_json(silent=True) or {}
+        return _bank_call(lambda c, t: banker_api.schedule_race(
+            c, t, b.get("race_id"), b.get("ordinal"), b.get("name"),
+            b.get("horses"), b.get("planned_at")))
+
+    @app.post("/banker/race/open")
+    def banker_open():
+        b = request.get_json(silent=True) or {}
+        return _bank_call(lambda c, t: banker_api.open_race(
+            c, t, b.get("race_id"), now=int(time.time()),
+            window_secs=b.get("window_secs"), closes_at=b.get("closes_at")))
+
+    @app.post("/banker/race/extend")
+    def banker_extend():
+        b = request.get_json(silent=True) or {}
+        return _bank_call(lambda c, t: banker_api.extend_race(
+            c, t, b.get("race_id"), b.get("new_closes_at")))
+
+    @app.post("/banker/race/lock")
+    def banker_lock():
+        b = request.get_json(silent=True) or {}
+        return _bank_call(lambda c, t: banker_api.lock_race(
+            c, t, b.get("race_id"), now=int(time.time())))
+
+    @app.post("/banker/race/settle")
+    def banker_settle():
+        b = request.get_json(silent=True) or {}
+        return _bank_call(lambda c, t: banker_api.settle_race(
+            c, t, b.get("race_id"), b.get("winning_horse")))
+
+    @app.post("/banker/guest/find")
+    def banker_find():
+        b = request.get_json(silent=True) or {}
+        return _bank_call(lambda c, t: banker_api.find_guests(c, t, b.get("query")))
+
+    @app.post("/banker/guest")
+    def banker_guest():
+        b = request.get_json(silent=True) or {}
+        return _bank_call(lambda c, t: banker_api.guest_detail(c, t, b.get("account_id")))
+
+    @app.post("/banker/cash/topup")
+    def banker_topup():
+        b = request.get_json(silent=True) or {}
+        return _bank_call(lambda c, t: banker_api.cash_topup(
+            c, t, b.get("account_id"), int(b.get("cents", 0))))
+
+    @app.post("/banker/cash/cashout")
+    def banker_cashout():
+        b = request.get_json(silent=True) or {}
+        return _bank_call(lambda c, t: banker_api.cash_out(
+            c, t, b.get("account_id"), int(b.get("cents", 0))))
+
+    @app.post("/banker/bet/void")
+    def banker_void():
+        b = request.get_json(silent=True) or {}
+        return _bank_call(lambda c, t: banker_api.void_bet(c, t, int(b.get("bet_id", 0))))
+
+    @app.post("/banker/claimcode")
+    def banker_claimcode():
+        b = request.get_json(silent=True) or {}
+        return _bank_call(lambda c, t: banker_api.issue_claim_code(c, t, b.get("account_id")))
 
     @app.get("/healthz")
     def healthz():

@@ -16,10 +16,14 @@ need real infrastructure (concurrency, live webhook, verification, provisioning)
   shares idempotency with the live webhook.
 - **4 — guest web app (§6/§8):** the QR-launched phone page. Claim by email or
   check-in code → a signed session bound to the account; tap a horse, bet chips.
-  Every guard (overspend, late tap) lives in the §3.1 transaction, never trusted
-  from the phone. Winnings land back on settle.
+  Every guard lives in the §3.1 transaction, never trusted from the phone.
+- **5 — banker console (§7):** password-gated staff page. Race control
+  (schedule / open / extend / lock / settle), the cash desk (top-up + cash-out),
+  voiding a genuine mistake bet, guest lookup, and the always-on reconciliation.
+  Guests can't edit bets; a banker can void one.
 
-Still to come: banker console (§7), deploy + venue-network load test (§9).
+Still to come: wire the live guest page to the full race card (countdown +
+winner reveal), the exception desk, deploy + venue-network load test (§9).
 
 ## Files
 
@@ -34,7 +38,10 @@ Still to come: banker console (§7), deploy + venue-network load test (§9).
 | `guest_api.py` | Guest app core (§6): claim, state, place bet in chips. |
 | `sessions.py` | HMAC-signed guest sessions bound to an account (§6/§8). |
 | `guest.html` | The QR-launched phone page (served by `app.py`). |
-| `app.py` | Flask adapter: webhook + guest routes + serves the page. **Deploy-time only.** |
+| `banker.py` | Race scheduling, control, settle, race card, reconciliation. |
+| `banker_api.py` | Console API: auth gate, race control, cash desk, void, lookup. |
+| `banker_console.html` | The password-gated staff console (served at `/banker`). |
+| `app.py` | Flask adapter: webhook + guest + banker routes. **Deploy-time only.** |
 | `tests/` | Suites 01–04 ported, plus provisioning, guest app, concurrency, redelivery, verification. |
 | `run_all.py` | Applies the schema and runs all nine suites. |
 
@@ -48,7 +55,7 @@ export DATABASE_URL="postgresql://youruser@localhost:5432/postgres"
 python run_all.py
 ```
 
-Expected: `TOTAL: 68 pass · 0 fail · 0 error`.
+Expected: `TOTAL: 88 pass · 0 fail · 0 error`.
 
 `run_all.py` **drops and recreates** all tables each run — use a throwaway
 database, never one with real data.

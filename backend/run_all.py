@@ -36,6 +36,7 @@ def main():
     import test_provisioning
     import test_guest_app
     import test_race_schedule
+    import test_banker_api
     import test_concurrency
     import test_webhook_idempotency
     import test_webhook_receiver
@@ -50,6 +51,7 @@ def main():
         ("NEW - pre-provisioning (spec 4.1)", test_provisioning.SUITE),
         ("NEW - guest web app (spec 6/8)", test_guest_app.SUITE),
         ("NEW - banker: schedule/timing/settle/reconcile (6/7)", test_race_schedule.SUITE),
+        ("NEW - banker console API (spec 7)", test_banker_api.SUITE),
         ("NEW - true concurrency (real threads)", test_concurrency.SUITE),
         ("NEW - webhook redelivery idempotency", test_webhook_idempotency.SUITE),
         ("NEW - webhook verification (spec 4.3)", test_webhook_receiver.SUITE),
