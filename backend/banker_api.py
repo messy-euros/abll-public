@@ -135,3 +135,14 @@ def issue_claim_code(conn, token, account_id):
     if g:
         return g
     return {"ok": True, "code": DB.issue_claim_code(conn, account_id)}
+
+
+def new_guest(conn, token, label, email=None, initial_cents=0):
+    g = _guard(token)
+    if g:
+        return g
+    if not (label and label.strip()):
+        return {"ok": False, "reason": "name required"}
+    guest = DB.create_guest(conn, label.strip(), email,
+                            initial_cents if isinstance(initial_cents, int) else 0)
+    return {"ok": True, "guest": guest}

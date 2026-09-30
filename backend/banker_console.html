@@ -204,7 +204,15 @@ async function settle(id){
 function renderDesk(){
   const box=$('#desk'); if(!box) return;
   const active=document.activeElement&&document.activeElement.id;
-  let html=`<div class="row"><input id="q" placeholder="Find a guest by name or email" style="flex:1" value="${desk.query.replace(/"/g,'&quot;')}" oninput="desk.query=this.value" onkeydown="if(event.key==='Enter')findGuest()"><button class="act ghost" onclick="findGuest()">Search</button></div>`;
+  let html=`<div style="padding-bottom:12px;margin-bottom:12px;border-bottom:1px dashed var(--line)">
+      <div class="lbl" style="margin-bottom:6px">New guest — register on the spot</div>
+      <div class="row"><input id="ngName" placeholder="Name" style="flex:1;min-width:120px" value="${(desk.ngName||'').replace(/"/g,'&quot;')}" oninput="desk.ngName=this.value">
+        <input id="ngEmail" placeholder="Email (optional)" style="flex:1;min-width:120px" value="${(desk.ngEmail||'').replace(/"/g,'&quot;')}" oninput="desk.ngEmail=this.value">
+        <span class="lbl">$</span><input class="amt" id="ngChips" type="number" min="0" placeholder="chips" value="${desk.ngChips!=null?desk.ngChips:''}" oninput="desk.ngChips=this.value">
+        <button class="act" onclick="createGuest()">Create</button></div>
+      ${desk.created?`<div class="msg show ok" style="margin-top:8px">Created <b>${desk.created.label}</b> — claim code <b style="font-size:16px">${desk.created.claim_code}</b>${desk.created.balance_cents?(' · '+money(desk.created.balance_cents)):''}. Have them enter this code on their phone.</div>`:''}
+    </div>`;
+  html+=`<div class="row"><input id="q" placeholder="Find a guest by name or email" style="flex:1" value="${desk.query.replace(/"/g,'&quot;')}" oninput="desk.query=this.value" onkeydown="if(event.key==='Enter')findGuest()"><button class="act ghost" onclick="findGuest()">Search</button></div>`;
   if(desk.results.length && !desk.guest){ html+='<div style="margin-top:10px">'+desk.results.map(g=>`<div class="gres" onclick="openGuest('${g.account_id}')"><b>${g.label||g.account_id}</b> · <span class="num">${money(g.balance_cents)}</span></div>`).join('')+'</div>'; }
   if(desk.guest){ const G=desk.guest;
     html+=`<div style="margin-top:12px;padding-top:12px;border-top:1px dashed var(--line)">
@@ -223,6 +231,15 @@ function renderDesk(){
   if(active){ const el=document.getElementById(active); if(el){ el.focus(); if(el.setSelectionRange&&el.type!=='number'){try{el.setSelectionRange(el.value.length,el.value.length)}catch(e){}} } }
 }
 async function findGuest(){ const r=await api('/banker/guest/find',{query:desk.query}); desk.results=r.results||[]; desk.guest=null; deskMsg('',true); renderDesk(); }
+async function createGuest(){
+  const label=(desk.ngName||'').trim();
+  if(!label){ desk.created=null; renderDesk(); document.getElementById('ngName')?.focus(); return; }
+  const chips=Math.max(0,parseInt(desk.ngChips)||0);
+  const r=await api('/banker/guest/new',{label, email:(desk.ngEmail||'').trim()||null, initial_dollars:chips});
+  if(r.ok){ desk.created=r.guest; desk.ngName=''; desk.ngEmail=''; desk.ngChips=''; refresh(); }
+  else { deskMsg(r.reason||'Could not create guest',false); }
+  renderDesk();
+}
 async function openGuest(id){ const r=await api('/banker/guest',{account_id:id}); desk.guest=r.guest; renderDesk(); }
 async function reloadGuest(){ if(desk.guest) await openGuest(desk.guest.account_id); }
 async function deskTopUp(){ const c=Math.max(1,parseInt(desk.amt)||0)*100; const r=await api('/banker/cash/topup',{account_id:desk.guest.account_id,cents:c}); r.ok?deskMsg('Topped up '+money(c),true):deskMsg(r.reason,false); await reloadGuest(); refresh(); }

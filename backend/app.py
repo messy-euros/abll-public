@@ -45,6 +45,12 @@ def _bearer(req):
 def create_app():
     if Flask is None:
         raise RuntimeError("Flask is not installed. `pip install flask` to serve.")
+    # On a hosted deploy the database starts empty; create tables if missing.
+    try:
+        if DB.ensure_schema():
+            print("Initialized database schema.")
+    except Exception as e:  # noqa: BLE001
+        print(f"Schema check skipped: {e}")
     app = Flask(__name__)
     zeffy = ZeffyClient()
     webhook_secret = os.environ.get("ZEFFY_WEBHOOK_SECRET")
@@ -186,6 +192,14 @@ def create_app():
     def banker_claimcode():
         b = request.get_json(silent=True) or {}
         return _bank_call(lambda c, t: banker_api.issue_claim_code(c, t, b.get("account_id")))
+
+    @app.post("/banker/guest/new")
+    def banker_new_guest():
+        b = request.get_json(silent=True) or {}
+        dollars = b.get("initial_dollars") or 0
+        cents = int(round(float(dollars) * 100)) if dollars else 0
+        return _bank_call(lambda c, t: banker_api.new_guest(
+            c, t, b.get("label"), b.get("email"), cents))
 
     @app.get("/healthz")
     def healthz():

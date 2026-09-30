@@ -112,6 +112,21 @@ def _void_guards(c):
     ok(not API.void_bet(c, t, bet_id)["ok"], "can't void after settle")
 
 
+def _new_guest(c):
+    t = tok()
+    r = API.new_guest(c, t, "Nora Newcomer", email="nora@x.com", initial_cents=D(30))
+    ok(r["ok"], "guest created")
+    g = r["guest"]
+    ok(g["claim_code"], "gets a claim code")
+    eq(g["balance_cents"], D(30), "starting chips loaded")
+    # claimable by that code, and findable by the banker
+    import guest_api
+    cl = guest_api.claim(c, code=g["claim_code"])
+    ok(cl["ok"] and cl["account_id"] == g["account_id"], "guest can claim with the code")
+    ok(not API.new_guest(c, t, "")["ok"], "blank name rejected")
+    ok(not API.new_guest(c, "not-a-banker", "X")["ok"], "non-banker can't create")
+
+
 SUITE = [
  ("login: wrong password rejected, right issues a banker token", _login),
  ("auth gate: only a banker token reaches the controls", _auth_gate),
@@ -121,6 +136,7 @@ SUITE = [
  ("cash desk: find, top up, cash out (guarded)", _cash_desk),
  ("void a mistake bet: refunded, excluded, still balanced", _void_bet),
  ("void is refused after settle", _void_guards),
+ ("new guest: created, funded, claimable by code", _new_guest),
 ]
 
 

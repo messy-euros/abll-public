@@ -26,7 +26,29 @@ def connect(dsn: str | None = None) -> psycopg.Connection:
     dsn = dsn or os.environ.get(
         "DATABASE_URL", "host=/tmp port=5433 dbname=natr user=postgres"
     )
+    # some hosts hand out the legacy postgres:// scheme; libpq wants postgresql://
+    if dsn.startswith("postgres://"):
+        dsn = "postgresql://" + dsn[len("postgres://"):]
     return psycopg.connect(dsn, autocommit=False)
+
+
+import pathlib as _pathlib  # noqa: E402
+_SCHEMA_PATH = _pathlib.Path(__file__).parent / "schema.sql"
+
+
+def ensure_schema(dsn: str | None = None):
+    """Create the tables only if they're missing. Safe for a hosted app to call
+    on every boot — it never drops existing data. (apply-and-wipe lives in
+    run_all for the test runner.)"""
+    conn = connect(dsn)
+    conn.autocommit = True
+    try:
+        if conn.execute("SELECT to_regclass('public.races')").fetchone()[0] is None:
+            conn.execute(_SCHEMA_PATH.read_text())
+            return True
+        return False
+    finally:
+        conn.close()
 
 
 def _norm_email(e: str | None) -> str | None:
@@ -418,6 +440,18 @@ def issue_claim_code(conn, account_id, code=None):
             (code, account_id),
         )
     return code
+
+
+def create_guest(conn, label, email=None, initial_cents=0):
+    """Register a guest on the spot (bank walk-up / demo): make the account,
+    attach an email alias if given, optionally load starting chips as cash, and
+    hand back a claim code they can use on their phone."""
+    acct, _ = resolve_identity(conn, None, _norm_email(email), label)
+    if initial_cents and initial_cents > 0:
+        topup_account(conn, acct, initial_cents, "cash")
+    code = issue_claim_code(conn, acct)
+    return {"account_id": acct, "label": label, "email": _norm_email(email),
+            "claim_code": code, "balance_cents": balance(conn, acct)}
 
 
 def account_for_claim_code(conn, code):
