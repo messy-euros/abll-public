@@ -116,6 +116,7 @@ function renderShell(){
             <input id="addHorses" placeholder="Horses: 1:Comet, 3:Biscuit, 7:Bolt" style="flex:2;min-width:200px">
             <button class="act ghost" onclick="addRace()">Add race</button>
           </div>
+          <div id="addMsg" class="sub" style="margin-top:6px"></div>
         </div>
       </div>
       <div class="card" id="deskCard"><h2>Cash desk</h2><div id="desk"></div></div>
@@ -171,14 +172,20 @@ function renderCard(){
 }
 
 async function addRace(){
+  const msg=$('#addMsg'); const set=(t,ok)=>{msg.textContent=t;msg.style.color=ok?'var(--win)':'var(--lose)';};
   const name=$('#addName').value.trim();
   const horses=($('#addHorses').value||'').split(',').map(s=>s.trim()).filter(Boolean).map(tok=>{
-    const [no,...nm]=tok.split(':'); return {number:no.trim(), name:nm.join(':').trim()||('Horse '+no.trim())};
-  });
-  if(!name||!horses.length){ return; }
+    const [no,...nm]=tok.split(/[:\s]+/); return {number:(no||'').trim(), name:nm.join(' ').trim()||('Horse '+(no||'').trim())};
+  }).filter(h=>h.number);
+  if(!name){ set('Enter a race name first.',false); $('#addName').focus(); return; }
+  if(!horses.length){ set('Add at least one horse, e.g.  1:Comet, 3:Biscuit, 7:Bolt',false); $('#addHorses').focus(); return; }
   const ordinal=(lastCard?lastCard.races.length:0)+1;
-  await api('/banker/race/schedule',{race_id:'R'+Date.now(), ordinal, name, horses});
-  $('#addName').value=''; $('#addHorses').value=''; refresh();
+  try{
+    const r=await api('/banker/race/schedule',{race_id:'R'+Date.now(), ordinal, name, horses});
+    if(r && r.ok===false){ set(r.reason||'Could not add the race.',false); return; }
+    set('Added “'+name+'” with '+horses.length+' horse'+(horses.length>1?'s':'')+'.',true);
+    $('#addName').value=''; $('#addHorses').value=''; await refresh();
+  }catch(e){ set('Server error — try signing out and back in.',false); }
 }
 async function openRace(id, clocked){ const w=clocked?Math.max(1,parseInt(addMin)||2)*60:null; await api('/banker/race/open',{race_id:id, window_secs:w}); refresh(); }
 async function bumpClose(id, sign){ const r=lastCard.races.find(x=>x.race_id===id); const m=Math.max(1,parseInt(extMin)||1);
