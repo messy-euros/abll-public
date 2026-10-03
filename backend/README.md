@@ -55,7 +55,7 @@ export DATABASE_URL="postgresql://youruser@localhost:5432/postgres"
 python run_all.py
 ```
 
-Expected: `TOTAL: 88 pass · 0 fail · 0 error`.
+Expected: `TOTAL: 94 pass · 0 fail · 0 error`.
 
 `run_all.py` **drops and recreates** all tables each run — use a throwaway
 database, never one with real data.

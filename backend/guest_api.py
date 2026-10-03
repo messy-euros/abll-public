@@ -10,6 +10,7 @@ trusted from the client.
 from __future__ import annotations
 
 import db as DB
+import banker as BANK
 import sessions
 
 CHIP_CENTS = 1000  # a Betting Ticket is $10 (spec §2)
@@ -41,15 +42,46 @@ def authed_account(token):
 
 
 # ---- state: what the phone renders (spec §6.3) ----------------------------
+def _my_stake(conn, account_id, race):
+    """This guest's live (non-voided) bets on a race, rolled up per horse with
+    the horse's name, for the 'your bets this race' summary."""
+    rows = conn.execute(
+        "SELECT horse, SUM(cents) FROM bets WHERE account_id=%s AND race_id=%s "
+        "AND NOT voided GROUP BY horse",
+        (account_id, race["race_id"]),
+    ).fetchall()
+    names = {str(h.get("number")): h.get("name") for h in (race.get("horses") or [])}
+    return [{"horse": h, "name": names.get(str(h)), "cents": int(c)} for h, c in rows]
+
+
 def state(conn, token, now=None):
+    import time as _t
     account_id = authed_account(token)
     if account_id is None:
         return {"ok": False, "reason": "not signed in"}
+    if now is None:
+        now = int(_t.time())
+    card = BANK.race_card(conn, now)
+
+    races, live = [], None
+    for r in card["races"]:
+        stake = _my_stake(conn, account_id, r)
+        bettable = r["status"] == "live"
+        result = None
+        if r["status"] == "settled" and stake:
+            result = BANK.guest_result(conn, account_id, r["race_id"])
+        rr = {**r, "open_for_bets": bettable, "your_stake": stake, "result": result}
+        races.append(rr)
+        if bettable and live is None:
+            live = rr
+
     return {
         "ok": True,
         "account_id": account_id,
         "balance_cents": DB.balance(conn, account_id),
-        "race": DB.current_open_race(conn, now),
+        "server_now": now,
+        "races": races,
+        "race": live,                       # the current live race (compat)
         "recent_bets": DB.recent_bets(conn, account_id),
     }
 

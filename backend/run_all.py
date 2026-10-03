@@ -35,6 +35,7 @@ def main():
     import test_integration
     import test_provisioning
     import test_guest_app
+    import test_guest_card
     import test_race_schedule
     import test_banker_api
     import test_concurrency
@@ -50,6 +51,7 @@ def main():
         ("Suite 04 - integration seam (Postgres)", test_integration.SUITE),
         ("NEW - pre-provisioning (spec 4.1)", test_provisioning.SUITE),
         ("NEW - guest web app (spec 6/8)", test_guest_app.SUITE),
+        ("NEW - guest phone card contract (feedback)", test_guest_card.SUITE),
         ("NEW - banker: schedule/timing/settle/reconcile (6/7)", test_race_schedule.SUITE),
         ("NEW - banker console API (spec 7)", test_banker_api.SUITE),
         ("NEW - true concurrency (real threads)", test_concurrency.SUITE),
