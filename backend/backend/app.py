@@ -193,6 +193,10 @@ def create_app():
         b = request.get_json(silent=True) or {}
         return _bank_call(lambda c, t: banker_api.issue_claim_code(c, t, b.get("account_id")))
 
+    @app.post("/banker/reset")
+    def banker_reset():
+        return _bank_call(lambda c, t: banker_api.reset_all(c, t))
+
     @app.post("/banker/guest/new")
     def banker_new_guest():
         b = request.get_json(silent=True) or {}

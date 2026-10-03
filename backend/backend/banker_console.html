@@ -122,6 +122,12 @@ function renderShell(){
       <div class="card" id="deskCard"><h2>Cash desk</h2><div id="desk"></div></div>
       <div class="card recon" id="reconCard"><h2>Reconciliation — watched all night (§7)</h2>
         <div id="reconLines"></div><div style="margin-top:12px" id="reconBadge"></div></div>
+      <div class="card full" id="dangerCard" style="display:none;border-color:#e3b4ad">
+        <h2 style="color:var(--lose)">Danger zone</h2>
+        <div class="sub" style="margin-bottom:10px">Wipes <b>all</b> races, guests, and bets for a clean slate. Hidden automatically on the live event (ALLOW_RESET off).</div>
+        <button class="act danger" onclick="doReset()">Reset everything</button>
+        <span id="resetMsg" class="sub" style="margin-left:10px"></span>
+      </div>
     </div>`;
 }
 
@@ -131,6 +137,7 @@ async function refresh(){
   if(!d.ok){ if(d.reason&&d.reason.includes('banker')) signOut(); return; }
   clockOffset = d.now - Math.floor(Date.now()/1000);
   lastCard=d.card; lastRecon=d.recon;
+  const dc=document.getElementById('dangerCard'); if(dc) dc.style.display = d.reset_enabled ? 'block' : 'none';
   renderCard(); renderRecon();
 }
 function startPoll(){ stopPoll(); pollTimer=setInterval(()=>{ if(document.getElementById('races')){renderCard();} refresh(); }, 3000); }
@@ -257,6 +264,16 @@ function renderRecon(){
   const badge = R.balanced?`<span class="badge ok">✓ Balanced</span>`:`<span class="badge bad">✗ Off — investigate</span>`;
   const rb=$('#reconBadge'); if(rb) rb.innerHTML=badge;
   const hb=$('#hbadge'); if(hb) hb.innerHTML=R.balanced?`<span class="hbadge ok">✓ Balanced</span>`:`<span class="hbadge bad">✗ Off</span>`;
+}
+
+/* ---------------- danger zone ---------------- */
+async function doReset(){
+  if(!confirm('Wipe ALL races, guests, and bets? This cannot be undone.')) return;
+  if(!confirm('Last chance — erase everything and start from a blank slate?')) return;
+  const msg=document.getElementById('resetMsg'); if(msg) msg.textContent='Resetting…';
+  const r=await api('/banker/reset',{});
+  if(r.ok){ desk={query:'',results:[],guest:null,amt:20}; winnerPick={}; renderDesk(); if(msg) msg.textContent='Clean slate.'; refresh(); }
+  else if(msg){ msg.textContent=r.reason||'Reset failed'; }
 }
 
 /* ---------------- boot ---------------- */

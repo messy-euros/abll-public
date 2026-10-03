@@ -112,6 +112,23 @@ def _void_guards(c):
     ok(not API.void_bet(c, t, bet_id)["ok"], "can't void after settle")
 
 
+def _reset_gated(c):
+    t = tok()
+    _fund(c, "amy", D(50))
+    API.schedule_race(c, t, "R1", 1, horses=HORSES)
+    os.environ.pop("ALLOW_RESET", None)
+    ok(not API.reset_all(c, t)["ok"], "reset refused when ALLOW_RESET is off")
+    ok(len(DB.accounts(c)) >= 1, "nothing wiped while disabled")
+    os.environ["ALLOW_RESET"] = "true"
+    try:
+        ok(not API.reset_all(c, "not-a-banker").get("ok"), "non-banker can't reset")
+        ok(API.reset_all(c, t)["ok"], "reset works when enabled for a banker")
+        eq(len(DB.accounts(c)), 0, "accounts wiped")
+        eq(len(BANK.race_card(c)["races"]), 0, "races wiped")
+    finally:
+        os.environ.pop("ALLOW_RESET", None)
+
+
 def _new_guest(c):
     t = tok()
     r = API.new_guest(c, t, "Nora Newcomer", email="nora@x.com", initial_cents=D(30))
@@ -137,6 +154,7 @@ SUITE = [
  ("void a mistake bet: refunded, excluded, still balanced", _void_bet),
  ("void is refused after settle", _void_guards),
  ("new guest: created, funded, claimable by code", _new_guest),
+ ("reset is off by default, works only when enabled + banker", _reset_gated),
 ]
 
 

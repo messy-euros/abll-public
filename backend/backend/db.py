@@ -442,6 +442,16 @@ def issue_claim_code(conn, account_id, code=None):
     return code
 
 
+def reset_all(conn):
+    """Empty every table (keep the schema). For a clean slate between tests —
+    never exposed on the live event (see banker_api.reset / ALLOW_RESET)."""
+    with conn.transaction():
+        conn.execute(
+            "TRUNCATE ledger_entries, account_aliases, balances, bets, races, "
+            "accounts, claim_codes RESTART IDENTITY CASCADE"
+        )
+
+
 def create_guest(conn, label, email=None, initial_cents=0):
     """Register a guest on the spot (bank walk-up / demo): make the account,
     attach an email alias if given, optionally load starting chips as cash, and

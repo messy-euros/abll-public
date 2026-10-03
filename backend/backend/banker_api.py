@@ -37,14 +37,30 @@ def _guard(token):
 
 
 # ---- dashboard (race card + reconciliation) -------------------------------
+def reset_enabled():
+    """The reset button is OFF unless ALLOW_RESET is explicitly set. Leave it
+    unset on the live event and reset cannot happen, button or no button."""
+    return os.environ.get("ALLOW_RESET", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def dashboard(conn, token, now=None):
     g = _guard(token)
     if g:
         return g
     if now is None:
         now = int(time.time())
-    return {"ok": True, "now": now,
+    return {"ok": True, "now": now, "reset_enabled": reset_enabled(),
             "card": BANK.race_card(conn, now), "recon": BANK.reconciliation(conn)}
+
+
+def reset_all(conn, token):
+    g = _guard(token)
+    if g:
+        return g
+    if not reset_enabled():
+        return {"ok": False, "reason": "reset is disabled (set ALLOW_RESET to enable)"}
+    DB.reset_all(conn)
+    return {"ok": True}
 
 
 # ---- race control ---------------------------------------------------------
